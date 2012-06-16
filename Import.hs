@@ -10,6 +10,7 @@ module Import
 #if __GLASGOW_HASKELL__ < 704
     , (<>)
 #endif
+    , maybeRead
     ) where
 
 import Prelude hiding (writeFile, readFile, head, tail, init, last)
@@ -26,3 +27,5 @@ infixr 5 <>
 (<>) :: Monoid m => m -> m -> m
 (<>) = mappend
 #endif
+
+import Utils

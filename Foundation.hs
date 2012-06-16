@@ -32,6 +32,20 @@ import Text.Jasmine (minifym)
 import Web.ClientSession (getKey)
 import Text.Hamlet (hamletFile)
 
+-- added
+import qualified Data.Text as T
+import EveApiTypes
+import Utils -- not to be confused with Util!
+
+instance PathPiece Call where
+    toPathPiece CallList = "calllist"
+    toPathPiece c        = T.pack $ show c
+    fromPathPiece "calllist" = Just CallList
+    fromPathPiece s          = maybeRead (T.unpack s)
+instance PathPiece Scope where
+    toPathPiece   = scopeString
+    fromPathPiece = stringScope
+
 -- | The site argument for your application. This can be a good place to
 -- keep settings and values requiring initialization before your application
 -- starts running, such as database connections. Every handler will have
