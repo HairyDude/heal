@@ -6,7 +6,7 @@ $maybe CallArgs keytype arglist <- args
     $else
         <p>This call takes the following arguments:
         <ul>
-        $forall Arg name type _ <- arglist
-            <li>#{argStringT name} of type #{typeStringT type}
+            $forall Arg name type _ <- arglist
+                <li>#{argStringT name} of type #{typeStringT type}
 $nothing
     <p>Oops! I forgot to put this call in the list!
