@@ -6,6 +6,7 @@ module Import
     , module Settings.Development
     , module Data.Monoid
     , module Control.Applicative
+    , module Control.Monad
     , Text
 #if __GLASGOW_HASKELL__ < 704
     , (<>)
@@ -18,6 +19,7 @@ import Yesod   hiding (Route(..))
 import Foundation
 import Data.Monoid (Monoid (mappend, mempty, mconcat))
 import Control.Applicative ((<$>), (<*>), pure)
+import Control.Monad (liftM, mapM, mapM_, forM, forM_)
 import Data.Text (Text)
 import Settings.StaticFiles
 import Settings.Development

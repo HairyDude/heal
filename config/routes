@@ -1,9 +1,8 @@
 /static StaticR Static getStatic
-/auth   AuthR   Auth   getAuth
 
 /favicon.ico FaviconR GET
 /robots.txt RobotsR GET
 
 / HomeR GET POST
 
-/call/#Scope/#Call CallR GET
+/call/#Scope/#Call CallR GET POST

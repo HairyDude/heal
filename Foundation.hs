@@ -119,7 +119,8 @@ instance Yesod App where
     urlRenderOverride _ _ = Nothing
 
     -- The page to be redirected to when authentication is required.
-    authRoute _ = Just $ AuthR LoginR
+    --authRoute _ = Just $ AuthR LoginR
+    authRoute _ = Nothing
 
     messageLogger y loc level msg =
       formatLogText (getLogger y) loc level msg >>= logMsg (getLogger y)
@@ -143,6 +144,7 @@ instance YesodPersist App where
             f
             (connPool master)
 
+{-
 instance YesodAuth App where
     type AuthId App = UserId
 
@@ -162,6 +164,7 @@ instance YesodAuth App where
     authPlugins _ = [authBrowserId, authGoogleEmail]
 
     authHttpManager = httpManager
+-}
 
 -- This instance is required to use forms. You can modify renderMessage to
 -- achieve customized and internationalized form validation messages.

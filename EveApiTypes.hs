@@ -53,7 +53,7 @@ where
 
 import Prelude
     (   -- classes
-        Eq (..), Ord (..), Show (..), Read (..), Enum (..)
+        Eq (..), Ord (..), Show (..), Read (..), Enum (..), Bounded (..)
         -- types
     ,   Int, Integer, Bool, Maybe (..)
         -- operators
@@ -65,7 +65,7 @@ import Prelude
 import Utils (maybeRead)
 
 import Data.Text (Text)
-import qualified Data.Text as T
+--import qualified Data.Text as T
 --import Data.Map (Map)
 --import qualified Data.Map as M
 import Data.String
@@ -105,7 +105,7 @@ data Optional = Optional
                         -- Do not use ID if not needed. E.g. CorporationSheet
                         -- ignores the key if a corporationID is provideed.
               | Mandatory
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Enum)
 
 newtype WalletDivision = Division Int deriving (Eq, Ord, Show, Read)
                                     -- range: 0 - 6
@@ -218,7 +218,7 @@ data Scope = AcctScope
            | EVEScope
            | MapScope
            | ServerScope
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Show, Read, Enum, Bounded)
 
 scopeString :: IsString s => Scope -> s
 scopeString AcctScope   = "account"
@@ -263,7 +263,7 @@ data Call
     | SkillInTraining | SkillQueue | SkillTree | Sovereignty | Standings
     | StarbaseDetail | StarbaseList | TypeName | Titles | UpcomingCalendarEvents
     | WalletJournal | WalletTransactions
-    deriving (Show, Eq, Ord, Read)
+    deriving (Show, Eq, Ord, Read, Enum, Bounded)
 
 callBaseURL :: Failure HttpException m => (Call,Scope) -> m (Request m')
 callBaseURL (call, scope) = case call of
@@ -334,7 +334,7 @@ data InvFlag = None
              | SpecializedIndustrialShipHold | SpecializedAmmoHold
              | StructureActive | StructureInactive
              | JunkyardReprocessed | JunkyardTrashed
-    deriving (Eq, Ord, Show, Enum)
+    deriving (Eq, Ord, Show, Enum, Bounded)
 
 -- Extractor functions for easier pattern matching
 -- (use pattern guards: | Just n <- loSlot foo = ...)

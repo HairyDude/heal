@@ -1,11 +1,14 @@
-User
-    ident Text
-    password Text Maybe
-    UniqueUser ident
-Email
-    email Text
-    user UserId Maybe
-    verkey Text Maybe
-    UniqueEmail email
+CallSpec -- e.g. corp/AssetList
+    scope Scope
+    name Call
+    key KeyType
+    UniqueCall scope name
+ArgSpec -- e.g. optional characterID of type AInteger
+    argSpec Arg
+    UniqueArgSpec argSpec
+CallArg -- relation between CallSpecs and ArgSpecs
+    callId CallSpecId
+    argId ArgSpecId
+    UniqueCallArg callId argId
 
  -- By default this file is used in Model.hs (which is imported by Foundation.hs)
