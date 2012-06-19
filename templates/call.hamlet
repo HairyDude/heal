@@ -1,5 +1,5 @@
 <h1>API Calls
-<p>You're asking for the call #{T.pack $ show call} in scope #{scp}.
+<p>You're asking for the call #{toPathPiece call} in scope #{toPathPiece scope}.
 $maybe CallArgs _keytype arglist <- maybeArgs
     $if null arglist
         <p>This call takes no arguments.
@@ -10,6 +10,11 @@ $maybe CallArgs _keytype arglist <- maybeArgs
                 <li>#{argStringT name} of type #{typeStringT type}
 $nothing
     <p>Oops! I forgot to put this call in the list!
+$maybe (widget, enctype) <- mArgForm
+    <form method=post action=@{CallR scope call} enctype=#{enctype}>
+        ^{widget}
+        <input type=submit value="Submit call">
+<hr>
 <form method=post action=@{CallR scope call}>
     <input type=hidden name="PopulateCallDB" value="True">
     <input type=submit value="Populate the calls database">

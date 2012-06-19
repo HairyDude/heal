@@ -7,7 +7,6 @@ module EveApiTypes
     , APIArgument (..)
     , APIArgumentType (..)
     , argString     -- :: IsString s => APIArgumentType -> s
-    , readArg       -- :: APIArgumentType -> String -> Maybe APIArgument
     , Key (..)
     , KeyScope (..)
     , CharKey (..)
@@ -17,6 +16,7 @@ module EveApiTypes
     , scopeString   -- :: IsString s => Scope -> s
     , stringScope   -- :: (Eq s, IsString s) => s => Maybe Scope
     , CallArgs (..)
+    , FullCall (..)
     , Call (..)
     , callBaseURL   -- :: Failure HttpException m => (Call,Scope) -> m (Request m')
     , InvFlag   -- don't export "unused" InvFlags
@@ -62,8 +62,6 @@ import Prelude
     ,   reads
     )
 
-import Utils (maybeRead)
-
 import Data.Text (Text)
 --import qualified Data.Text as T
 --import Data.Map (Map)
@@ -72,8 +70,6 @@ import Data.String
 
 import Network.HTTP.Conduit
 import Control.Failure
-
-import Control.Monad
 
 data APIDataType = AInteger -- any integer type, distinctions are unimportant
                  | ABigint  -- (except bigints)
@@ -158,23 +154,6 @@ argString ArgTFromID        = "fromID"
 argString ArgTAccountKey    = "accountKey"
 argString ArgTItemID        = "itemID"
 
--- Parse argument provided as a string
-readArg :: APIArgumentType -> String -> Maybe APIArgument
-readArg ArgTIDs           = liftM ArgIDs           . maybeRead
-readArg ArgTVersion       = liftM ArgVersion       . maybeRead
-readArg ArgTNames         = liftM ArgNames         . maybeRead
-readArg ArgTCharacterID   = liftM ArgCharacterID   . maybeRead
-readArg ArgTCorporationID = liftM ArgCorporationID . maybeRead
-readArg ArgTEventIDs      = liftM ArgEventIDs      . maybeRead
-readArg ArgTContractID    = liftM ArgContractID    . maybeRead
-readArg ArgTBeforeKillID  = liftM ArgBeforeKillID  . maybeRead
-readArg ArgTOrderID       = liftM ArgOrderID       . maybeRead
-readArg ArgTExtended      = liftM ArgExtended      . maybeRead
-readArg ArgTRowCount      = liftM ArgRowCount      . maybeRead
-readArg ArgTFromID        = liftM ArgFromID        . maybeRead
-readArg ArgTAccountKey    = liftM ArgAccountKey    . maybeRead
-readArg ArgTItemID        = liftM ArgItemID        . maybeRead
-
 -- There are character keys and corporation keys.
 -- Corp keys are tied to a character, who only has one corp, so corporationID
 -- arguments are unnecessary for corp calls.
@@ -188,10 +167,11 @@ readArg ArgTItemID        = liftM ArgItemID        . maybeRead
 -- The following algebraic data types encode these requirements.
 data Key = Key { keyID :: Int
                , vCode :: Text
-               , keyScope :: KeyScope
-               , keyOptional :: Bool }
+               , keyScope :: KeyScope }
+         | KeyNone
     deriving (Eq, Ord, Show)
-data KeyScope = CharKeyScope CharKey
+data KeyScope = UnknownKeyScope
+              | CharKeyScope CharKey
               | CorpKeyScope
     deriving (Eq, Ord, Show)
 data CharKey = SingleCK
@@ -200,9 +180,9 @@ data CharKey = SingleCK
 
 -- For specifying API calls.
 data KeyType = NoKey
-             | AnyKey Optional  -- e.g. api/APIKeyInfo
-             | CorpKey Optional
-             | CharKey Optional
+             | AnyKey  { keyOpt :: Optional } -- e.g. api/APIKeyInfo
+             | CorpKey { keyOpt :: Optional }
+             | CharKey { keyOpt :: Optional }
     deriving (Eq, Ord, Show)
 
 -- Arguments other than keys (and characterIDs that are implied by a key).
@@ -242,6 +222,9 @@ stringScope _         = Nothing
 data CallArgs = CallArgs
         { callKey  :: KeyType
         , args     :: [Arg] }
+    deriving (Show, Eq, Ord)
+
+data FullCall = FullCall Scope Call (Maybe Key) [APIArgument]
     deriving (Show, Eq, Ord)
 
 -- Calls.
