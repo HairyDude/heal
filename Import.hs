@@ -17,7 +17,11 @@ module Import
 import Prelude hiding (writeFile, readFile, head, tail, init, last)
 import Yesod   hiding (Route(..))
 import Foundation
+#if __GLASGOW_HASKELL__ < 704
 import Data.Monoid (Monoid (mappend, mempty, mconcat))
+#else
+import Data.Monoid (Monoid (mappend, mempty, mconcat), (<>))
+#endif
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad (liftM, mapM, mapM_, forM, forM_)
 import Data.Text (Text)
