@@ -16,7 +16,7 @@ import qualified Data.Attoparsec.Text as AP
 
 -- Parse a comma-separated list.
 parseList :: Parser a -> Text -> Maybe [a]
-parseList p t = case (p `sepBy` char ',') `parse` t of
+parseList p t = case (skipSpace >> p `sepBy` char ',') `parse` t of
     Done _ r -> Just r
     _        -> Nothing
 
