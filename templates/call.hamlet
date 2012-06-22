@@ -4,12 +4,15 @@ $maybe CallArgs _keytype arglist <- maybeArgs
     $if null arglist
         <p>This call takes no arguments.
     $else
+        <!-- DELETEME when all arg fields are specified -->
         <p>This call takes the following arguments:
         <ul>
             $forall Arg name type _ <- arglist
                 <li>#{argStringT name} of type #{typeStringT type}
 $nothing
-    <p>Oops! I forgot to put this call in the list!
+    <p>
+        This call doesn't exist in this scope. Try a different scope or a #
+        different call.
 $maybe (widget, enctype) <- mArgForm
     <form method=post action=@{CallR scope call} enctype=#{enctype}>
         ^{widget}
