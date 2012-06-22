@@ -29,34 +29,39 @@ characterName = (\x y z -> x <> y <> z)
           spaceword = liftM2 T.cons (char ' ') word
 
 callForm :: Scope -> Call -> CallArgs -> Form FullCall
-callForm scope call callargs = do
+callForm scope call callargs html = do
+    -- First, some definitions
     let CallArgs keyType args = callargs
+        -- Use mopt or mreq as dictated by the first argument.
+        -- This is made non-trivial by the return type of the optional version.
+        -- The last argument is a single Maybe like mreq, not double like mopt.
         moptreq :: RenderMessage App FormMessage =>
                     Bool -> Field App App a -> FieldSettings App -> Maybe a
-                         -> MForm App App (FormResult (Maybe a),
-                                              FieldView App App)
+                         -> MForm App App (FormResult (Maybe a), FieldView App App)
         moptreq req field settings def =
                     if req
                     then (\(r,w) -> (Just <$> r,w)) <$>
                             mreq field settings def
                     else mopt field settings (Just def)
-        keyfields :: AForm App App (Maybe Key)
-        keyfields = formToAForm $ case keyType of
+        -- For some argument fields, we need to know whether a key has been
+        -- provided to know whether they are needed or not. Hence, we process
+        -- the key first.
+        keyfields :: MForm App App (FormResult (Maybe Key), [FieldView App App])
+        keyfields = case keyType of
             NoKey -> return (FormSuccess (Just KeyNone), [])
             _     -> do
                 let req = keyOpt keyType == Mandatory
-                (frkeyid, widgkeyid) <- moptreq req intField "Key ID" Nothing
-                (frvcode, widgvcode) <- moptreq req textField "vCode" Nothing
+                (frkeyid, fieldkeyid) <- moptreq req intField "Key ID" Nothing
+                (frvcode, fieldvcode) <- moptreq req textField "vCode" Nothing
                 let fields :: [FieldView App App]
-                    fields = [widgkeyid, widgvcode]
+                    fields = [fieldkeyid, fieldvcode]
                     formFail mesgs = return (FormFailure mesgs, fields)
                 case (frkeyid, frvcode) of
                     (FormSuccess mkeyid, FormSuccess mrawvcode) ->
                         -- TODO: validate vCode
                         if isNothing mkeyid || isNothing mrawvcode
                         then if req -- no key provided, but do we need one?
-                            then return (FormFailure ["This call requires a key"]
-                                        ,fields)
+                            then formFail ["This call requires a key"]
                             else return (FormSuccess Nothing, fields)
                         else return
                             (FormSuccess
@@ -64,6 +69,9 @@ callForm scope call callargs = do
                                             (fromJust mrawvcode)
                                             UnknownKeyScope)
                             ,fields)
+                    -- Unfortunately, although FormResult has a Monoid
+                    -- instance, we can't use it here because the two sides
+                    -- have different types and the result yet another.
                     (FormFailure failkey, FormFailure failvcode) ->
                         formFail (failkey ++ failvcode)
                     (FormFailure failkey, _) ->
@@ -71,8 +79,11 @@ callForm scope call callargs = do
                     (_, FormFailure failvcode) ->
                         formFail failvcode
                     _ -> formFail []
-        argfields :: AForm App App [APIArgument]
-        argfields = formToAForm $ do
+    (keyres,keyview) <- keyfields
+    let haskey = case keyres of { FormSuccess (Just _) -> True; _ -> False }
+        -- The main worker "function"
+        argfields :: MForm App App (FormResult [APIArgument], [FieldView App App])
+        argfields = do
             let consolidate :: -- Collect results, if there's no error
                        MForm App App [(FormResult (Maybe a), [FieldView App App])]
                     -> MForm App App  (FormResult       [a], [FieldView App App])
@@ -138,8 +149,37 @@ callForm scope call callargs = do
                                     "Invalid name list"
                                     characterName
                                     Nothing
-                    ArgTCharacterID -> notImplemented   -- int, may be FromKey
-                    ArgTCorporationID -> notImplemented -- int, may be FromKey
+                    --ArgTCharacterID -> notImplemented   -- int, may be FromKey
+                    ArgTCharacterID -> case opt of
+                        FromKey ->
+                            if haskey -- Assume key is appropriate for this call
+                                      -- TODO: only use it if it *is* appropriate
+                            then return (FormSuccess Nothing, []) -- ignore
+                            else mkfield ArgCharacterID intField "Character ID"
+                                    Nothing $
+                                    maybe FormMissing (FormSuccess . Just)
+                        Mandatory ->
+                            mkfield ArgCharacterID intField "Character ID" Nothing $
+                                maybe FormMissing (FormSuccess . Just)
+                        Optional ->
+                            mkfield ArgCharacterID intField "Character ID" Nothing $
+                                maybe (FormSuccess Nothing) (FormSuccess . Just)
+                    ArgTCorporationID -> case opt of
+                        FromKey ->
+                            if haskey -- Assume key is appropriate for this call
+                                      -- TODO: only use it if it *is* appropriate
+                            then return (FormSuccess Nothing, []) -- ignore
+                            else mkfield ArgCorporationID intField "Corporation ID"
+                                    Nothing $
+                                    maybe FormMissing (FormSuccess . Just)
+                        Mandatory ->
+                            mkfield ArgCorporationID intField "Corporation ID"
+                                Nothing $
+                                maybe FormMissing (FormSuccess . Just)
+                        Optional ->
+                            mkfield ArgCorporationID intField "Corporation ID"
+                                Nothing $
+                                maybe (FormSuccess Nothing) (FormSuccess . Just)
                     ArgTEventIDs -> parseListField ArgIDs
                                     "List of event IDs (comma-separated)"
                                     "Invalid event ID list"
@@ -173,9 +213,9 @@ callForm scope call callargs = do
                                 _                    -> "Item ID"
                         in  mkfield ArgItemID intField label Nothing $
                                 maybe FormMissing (FormSuccess . Just)
-    renderDivs $ FullCall scope call
-        <$> keyfields
-        <*> argfields
+    (argres,argview) <- argfields -- (FormResult [APIArgument], [FieldView App App])
+    renderDivs (formToAForm $ return (FullCall scope call <$> keyres <*> argres,
+                                       keyview <> argview)) html
 
 -- Fill the DB with the list of calls.
 -- TODO: check if this is in the static dump. (probably not with all the info here)
@@ -217,7 +257,7 @@ getCallR scope call = do
 postCallR :: Scope -> Call -> Handler RepHtml
 postCallR scope call = do
     populateString  <- runInputPost $ iopt hiddenField "PopulateCallDB"
-    let populate | Just populate <- join $ maybeRead <$> populateString = populate
+    let populate | Just pop <- maybeRead =<< populateString = pop
                  | otherwise = False
     if populate
     then do
