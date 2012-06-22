@@ -148,14 +148,31 @@ callForm scope call callargs = do
                     ArgTContractID ->
                         mkfield ArgContractID intField "Contract ID" Nothing $
                             maybe FormMissing (FormSuccess . Just)
-                    ArgTBeforeKillID -> notImplemented  -- int
-                    ArgTOrderID -> notImplemented       -- int
+                    ArgTBeforeKillID ->
+                        mkfield ArgBeforeKillID intField "Fetch kills before kill ID:"
+                            Nothing $
+                            maybe FormMissing (FormSuccess . Just)
+                    ArgTOrderID ->
+                        mkfield ArgOrderID intField "Order ID" Nothing $
+                            maybe FormMissing (FormSuccess . Just)
                     ArgTExtended -> notImplemented      -- for corp member tracking
                         {-mfield checkBoxField "Extended information" Nothing-}
-                    ArgTRowCount -> notImplemented      -- int
-                    ArgTFromID -> notImplemented        -- int
+                    ArgTRowCount ->
+                        mkfield ArgRowCount intField "Number of rows to fetch"
+                            Nothing $
+                            maybe FormMissing (FormSuccess . Just)
+                    ArgTFromID ->
+                        mkfield ArgFromID intField "Fetch entries before entry ID:"
+                            Nothing $
+                            maybe FormMissing (FormSuccess . Just)
                     ArgTAccountKey -> notImplemented    -- list box
-                    ArgTItemID -> notImplemented        -- int
+                    ArgTItemID ->
+                        let label = case call of
+                                StarbaseDetail -> "Starbase item ID"
+                                OutpostServiceDetail -> "Outpost item ID"
+                                _                    -> "Item ID"
+                        in  mkfield ArgItemID intField label Nothing $
+                                maybe FormMissing (FormSuccess . Just)
     renderDivs $ FullCall scope call
         <$> keyfields
         <*> argfields
