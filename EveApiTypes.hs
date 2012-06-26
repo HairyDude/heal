@@ -3,7 +3,7 @@ module EveApiTypes
     , typeString    -- :: IsString s => APIDataType -> s
     , CharacterID
     , Optional (..)
-    , WalletDivision
+    , WalletDivision (..)
     , APIArgument (..)
     , APIArgumentType (..)
     , argString     -- :: IsString s => APIArgumentType -> s
@@ -103,8 +103,8 @@ data Optional = Optional
               | Mandatory
     deriving (Eq, Ord, Show, Enum)
 
-newtype WalletDivision = Division Int deriving (Eq, Ord, Show, Read)
-                                    -- range: 0 - 6
+newtype WalletDivision = WalletDivision Int deriving (Eq, Ord, Show, Read)
+                                    -- range: 1000 - 1006
 data APIArgument
     = ArgIDs            [Integer]
     | ArgVersion        Integer -- in practice, always 1 (for AllianceList)
