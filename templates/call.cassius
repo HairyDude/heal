@@ -1,0 +1,10 @@
+body
+    width: 50em
+    margin: auto
+fieldset
+    display: table
+    div
+        display: table-row
+        label
+            display: table-cell
+            padding-right: 5px
