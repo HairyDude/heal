@@ -1,0 +1,12 @@
+li.open {
+    list-style-image: url("static/img/minus.png");
+}
+li.closed {
+    list-style-image: url("static/img/plus.png");
+}
+li.open ul {
+    display: block;
+}
+li.closed ul {
+    display: none;
+}
