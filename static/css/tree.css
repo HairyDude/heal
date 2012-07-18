@@ -1,8 +1,8 @@
 li.open {
-    list-style-image: url("static/img/minus.png");
+    list-style-image: url("../img/minus.png");
 }
 li.closed {
-    list-style-image: url("static/img/plus.png");
+    list-style-image: url("../img/plus.png");
 }
 li.open ul {
     display: block;
