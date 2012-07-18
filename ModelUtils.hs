@@ -1,7 +1,7 @@
 module ModelUtils where
 
 import Import
-import EveApiTypes
+import EveApi.Types
 import Data.Maybe (catMaybes)
 
 -- Given a call and its scope, gather the KeyType and ArgSpecs and construct a

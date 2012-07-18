@@ -1,8 +1,8 @@
-module EveApiValues where
+module EveApi.Values where
 
 import Prelude (map, (++), ($))
 
-import EveApiTypes
+import EveApi.Types
 
 import Data.Map (Map)
 import qualified Data.Map as M
@@ -23,11 +23,6 @@ apiCalls = M.fromList $
         ,ConquerableStationList
         ,FacWarStats
         ,FacWarTopStats
-        ,FacWarSystems
-        ,Jumps
-        ,Kills
-        ,Sovereignty
-        ,ServerStatus
         ] ++
     map (\name -> ((name, MapScope), CallArgs NoKey []))
         [FacWarSystems

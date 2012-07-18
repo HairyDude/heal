@@ -1,5 +1,28 @@
 <h1>API Calls
-<p>You're asking for the call #{toPathPiece call} in scope #{toPathPiece scope}.
+$maybe result <- mResult
+    <h2>Call result
+    $case result
+        $of NotRecognised
+            <p>I don't understand this call!
+        $of NotImplemented
+            <p>Sorry, I know this call, but it isn't implemented yet.
+        $of ServerError msg
+            <p>Something went wrong, namely this way:
+            <pre>#{msg}
+        $of UserError msg
+            <p>You're doing it wrong, namely this way:
+            <pre>#{msg}
+        $of Error eveerr
+            <p>The server sent us an error:
+            <pre>#{show eveerr}
+            <p>
+                (Sorry for the ugly message. It'll get fixed soon&#8482;.) #
+                Please don't resubmit this request unless the error is #
+                temporary. The server might block me.
+        $of Success xml
+            <p>Success! Here's the result of your call:
+            <pre>#{xml}
+<h2>#{toPathPiece call} in scope #{toPathPiece scope}
 $maybe CallArgs _keytype arglist <- mArgs
     $if null arglist
         <p>This call takes no arguments.

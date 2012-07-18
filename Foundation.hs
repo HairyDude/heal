@@ -34,7 +34,7 @@ import Text.Hamlet (hamletFile)
 
 -- added
 import qualified Data.Text as T
-import EveApiTypes
+import EveApi.Types
 import Utils -- not to be confused with Util!
 
 instance PathPiece Call where

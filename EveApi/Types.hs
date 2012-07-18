@@ -1,4 +1,4 @@
-module EveApiTypes
+module EveApi.Types
     ( APIDataType (..)
     , typeString    -- :: IsString s => APIDataType -> s
     , CharacterID
@@ -55,7 +55,7 @@ import Prelude
     (   -- classes
         Eq (..), Ord (..), Show (..), Read (..), Enum (..), Bounded (..)
         -- types
-    ,   Int, Integer, Bool, Maybe (..)
+    ,   Int, Integer, Bool, Maybe (..), Either (..)
         -- operators
     ,   ($), (++), (.)
         -- functions
@@ -248,8 +248,8 @@ data Call
     | WalletJournal | WalletTransactions
     deriving (Show, Eq, Ord, Read, Enum, Bounded)
 
-callBaseURL :: Failure HttpException m => (Call,Scope) -> m (Request m')
-callBaseURL (call, scope) = case call of
+callBaseURL :: Scope -> Call -> Either HttpException (Request m)
+callBaseURL scope call = case call of
     CallList -> callBaseURL' "calllist"
     _        -> callBaseURL' (show call)
     where callBaseURL' callS = parseUrl $

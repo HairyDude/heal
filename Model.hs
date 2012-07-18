@@ -9,7 +9,7 @@ import Data.Serialize
 import qualified Data.Text as T
 import GHC.Generics
 
-import EveApiTypes (
+import EveApi.Types (
         Optional (..), APIArgumentType (..), APIDataType (..)
     ,   Scope (..), Call (..), KeyType (..), Arg (..), CallArgs (..))
 

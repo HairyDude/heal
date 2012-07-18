@@ -2,15 +2,20 @@ module Handler.Call where
 
 import Import hiding (Key, sequence) -- clashes with custom type
 
-import EveApiTypes
-import EveApiValues
+import EveApi.Types
+import EveApi.Values
+import EveApi.Methods
 import ModelUtils
 
-import Data.Maybe (isNothing, fromJust, catMaybes)
+import Control.Monad (join, liftM2)
+import Control.Monad.Reader (runReaderT)
+import Control.Monad.Error hiding (sequence)
+import Control.Monad.Trans.Resource
+
+import Data.Maybe (isNothing, isJust, fromJust, catMaybes)
 import qualified Data.Text as T
 import qualified Data.Map as M
 import Data.Traversable (sequence)
-import Control.Monad (join, liftM2)
 import Data.Attoparsec.Text hiding (takeWhile)
 import qualified Data.Attoparsec.Text as AP
 
@@ -243,23 +248,25 @@ doPage :: Scope -> Call -> Maybe CallArgs
             -> Bool
             -> Maybe ((FormResult (Maybe Key), Widget), Enctype)
             -> Maybe ((FormResult [APIArgument], Widget), Enctype)
+            -> Maybe ApiResult
             -> Handler RepHtml
-doPage scope call mArgs wasPost mKeyForm mArgForm = do
+doPage scope call mArgs wasPost mKeyForm mArgForm mResult = do
     let wantKey = maybe False -- display a key form?
                         (\(CallArgs keyType _) -> case keyType of
                             NoKey -> False
                             _     -> True)
                         mArgs
         (mKeyWidg, keyEnctype) = maybe (Nothing, UrlEncoded)
-                                       (\((res, widg),enctype) ->
-                                            (if wantKey then Just (res, widg)
+                                       (\((keyRes, widg),enctype) ->
+                                            (if wantKey then Just (keyRes, widg)
                                                         else Nothing,
                                              enctype))
                                        mKeyForm
         (mArgWidg, argEnctype) = maybe (Nothing, UrlEncoded)
-                                        (\((res,widg),enctype) ->
-                                            (Just (res, widg), enctype))
-                                        mArgForm
+                                       (\((argRes,widg),enctype) ->
+                                            (Just (argRes, widg),
+                                             enctype))
+                                       mArgForm
         enctype = keyEnctype <> argEnctype
     defaultLayout $ do
         setTitle "API Calls"
@@ -274,7 +281,7 @@ getCallR scope call = do
     mArgs <- runDB $ getArgs scope call -- Maybe CallArgs
     mKeyForm <- sequence $ runFormPost <$> keyForm <$> mArgs
     mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs <*> pure False)
-    doPage scope call mArgs False mKeyForm mArgForm
+    doPage scope call mArgs False mKeyForm mArgForm Nothing
 
 postCallR :: Scope -> Call -> Handler RepHtml
 postCallR scope call = do
@@ -288,11 +295,25 @@ postCallR scope call = do
     else do
         mArgs <- runDB $ getArgs scope call
         mKeyForm <- sequence $ runFormPost <$> keyForm <$> mArgs
-        let hasKey = maybe False
+        let mKey = join $ maybe Nothing
                            (\((kr,_),_) -> case kr of
-                                FormSuccess _ -> True
-                                _             -> False)
+                                FormSuccess key -> Just key
+                                _               -> Nothing)
                            mKeyForm
+            hasKey = isJust mKey
         mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs <*> pure hasKey)
-        -- TODO: do something with formResult
-        doPage scope call mArgs True mKeyForm mArgForm
+        mResult <- case mArgForm of
+            Just ((res, xml), enctype) -> case res of
+                FormSuccess args -> do
+                    manager <- httpManager <$> getYesod
+                    eRes <- runExceptionT $
+                            runReaderT (doCall scope call mKey args) manager
+                    case eRes of
+                        Left e -> -- TODO: use fromException to distinguish
+                                  -- between different exceptions
+                            return . Just $ ServerError (T.pack $ show e)
+                        Right result -> return (Just result) 
+                FormMissing      -> return Nothing -- TODO: produce a message
+                FormFailure _    -> return Nothing -- TODO: produce a message
+            Nothing -> return Nothing -- invalid call TODO: produce a message
+        doPage scope call mArgs True mKeyForm mArgForm mResult
