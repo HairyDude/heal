@@ -6,12 +6,13 @@ import EveApi.Types
 import EveApi.Values
 import EveApi.Methods
 import ModelUtils
+import Utils
 
 import Control.Monad.Reader (runReaderT)
 import Control.Monad.Error hiding (sequence)
 import Control.Monad.Trans.Resource
 
-import Data.Maybe (isNothing, isJust, fromJust, catMaybes)
+import Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Map as M
 import Data.Traversable (sequence)
@@ -44,12 +45,12 @@ moptreq req field fsettings def =
                     mreq field fsettings def
             else mopt field fsettings (Just def)
 
-keyForm :: CallArgs -> Form (Maybe Key) -- return type (FormResult x, Widget)
-keyForm (CallArgs keyType _) = renderDivs $ formToAForm $
+keyForm :: CallParams -> Form (Maybe Key) -- return type (FormResult x, Widget)
+keyForm (CallParams keyType _) = renderDivs $ formToAForm $
     case keyType of -- don't make a form if no key is needed
         NoKey -> return (FormSuccess (Just KeyNone), mempty)
         _     -> do
-            let req = keyOpt keyType == Mandatory
+            let req = keyOpt keyType == Required
             (frkeyid, fieldkeyid) <- moptreq req intField "Key ID:" Nothing
             (frvcode, fieldvcode) <- moptreq req textField "vCode:" Nothing
             let fields :: [FieldView App App]
@@ -79,8 +80,8 @@ keyForm (CallArgs keyType _) = renderDivs $ formToAForm $
                     formFail failvcode
                 _ -> formFail []
 
-argForm :: Call -> CallArgs -> Bool -> Form [APIArgument]
-argForm call (CallArgs _ args) hasKey = do
+argForm :: Call -> CallParams -> Bool -> Form [APIArgument]
+argForm call (CallParams _ args) hasKey = do
     let consolidate :: -- Collect results, if there's no error
                MForm App App [(FormResult (Maybe a), [FieldView App App])]
             -> Form [a]
@@ -92,7 +93,7 @@ argForm call (CallArgs _ args) hasKey = do
             return (allresults, allfields)
         --notImplemented = return (FormFailure ["Not implemented"], [])
     consolidate $ forM args $ \(Arg name _atype opt) -> do
-        let req = opt == Mandatory  -- Check later in case opt == FromKey
+        let req = opt == Required  -- Check later in case opt == FromKey
             -- Do the following:
             -- * Use mopt or mreq as appropriate
             -- * If there's a result, pass it to a postprocessing
@@ -152,7 +153,7 @@ argForm call (CallArgs _ args) hasKey = do
                     else mkfield ArgCharacterID intField "Character ID:"
                             Nothing $
                             maybe FormMissing (FormSuccess . Just)
-                Mandatory ->
+                Required ->
                     mkfield ArgCharacterID intField "Character ID:" Nothing $
                         maybe FormMissing (FormSuccess . Just)
                 Optional ->
@@ -166,7 +167,7 @@ argForm call (CallArgs _ args) hasKey = do
                     else mkfield ArgCorporationID intField "Corporation ID:"
                             Nothing $
                             maybe FormMissing (FormSuccess . Just)
-                Mandatory ->
+                Required ->
                     mkfield ArgCorporationID intField "Corporation ID:"
                         Nothing $
                         maybe FormMissing (FormSuccess . Just)
@@ -231,7 +232,7 @@ populateCallDB = do
     runDB $ deleteWhere ([] :: [Filter ArgSpec])
     runDB $ deleteWhere ([] :: [Filter CallArg])
     forM_ (M.toList apiCalls) $
-        \((call, scope), CallArgs key arglist) -> do
+        \((call, scope), CallParams key arglist) -> do
             -- Insert the call
             callID <- runDB $ insert $ CallSpec scope call key
             -- Insert the ArgSpecs (getting IDs of any that are already in)
@@ -243,7 +244,7 @@ populateCallDB = do
 
 -- Render the page.
 -- Form widgets are built separately to let get/post handle them differently.
-doPage :: Scope -> Call -> Maybe CallArgs
+doPage :: Scope -> Call -> Maybe CallParams
             -> Bool
             -> Maybe ((FormResult (Maybe Key), Widget), Enctype)
             -> Maybe ((FormResult [APIArgument], Widget), Enctype)
@@ -251,7 +252,7 @@ doPage :: Scope -> Call -> Maybe CallArgs
             -> Handler RepHtml
 doPage scope call mArgs wasPost mKeyForm mArgForm mResult = do
     let wantKey = maybe False -- display a key form?
-                        (\(CallArgs keyType _) -> case keyType of
+                        (\(CallParams keyType _) -> case keyType of
                             NoKey -> False
                             _     -> True)
                         mArgs
@@ -277,7 +278,7 @@ doPage scope call mArgs wasPost mKeyForm mArgForm mResult = do
 -- Show list of args and form to provide them.
 getCallR :: Scope -> Call -> Handler RepHtml
 getCallR scope call = do
-    mArgs <- runDB $ getArgs scope call -- Maybe CallArgs
+    mArgs <- runDB $ getArgs scope call -- Maybe CallParams
     mKeyForm <- sequence $ runFormPost <$> keyForm <$> mArgs
     mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs <*> pure False)
     doPage scope call mArgs False mKeyForm mArgForm Nothing
@@ -292,27 +293,30 @@ postCallR scope call = do
         populateCallDB
         redirect (CallR scope call)
     else do
-        mArgs <- runDB $ getArgs scope call
-        mKeyForm <- sequence $ runFormPost <$> keyForm <$> mArgs
+        mParams <- runDB $ getArgs scope call
+        mKeyForm <- sequence $ runFormPost <$> keyForm <$> mParams
         let mKey = join $ maybe Nothing
                            (\((kr,_),_) -> case kr of
                                 FormSuccess key -> Just key
                                 _               -> Nothing)
                            mKeyForm
             hasKey = isJust mKey
-        mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs <*> pure hasKey)
+        mArgForm <- sequence $ runFormPost <$> (argForm call <$> mParams <*> pure hasKey)
         mResult <- case mArgForm of
             Just ((res, _), _) -> case res of
                 FormSuccess args -> do
                     manager <- httpManager <$> getYesod
-                    eRes <- runExceptionT $
-                            runReaderT (doCall scope call mKey args) manager
+                    eRes <- sequence $ runExceptionT <$>
+                                runReaderT (doCall scope call mKey args) <$>
+                                    -- ExceptionT m ApiResult
+                                    CallData manager <$> mParams
                     case eRes of
-                        Left e -> -- TODO: use fromException to distinguish
-                                  -- between different exceptions
+                        Just (Left e) -> -- TODO: use fromException to distinguish
+                                         -- between different exceptions
                             return . Just $ ServerError (T.pack $ show e)
-                        Right result -> return (Just result) 
+                        Just (Right result) -> return (Just result) 
+                        Nothing             -> return (Just NotRecognised)
                 FormMissing      -> return Nothing -- TODO: produce a message
                 FormFailure _    -> return Nothing -- TODO: produce a message
             Nothing -> return Nothing -- invalid call TODO: produce a message
-        doPage scope call mArgs True mKeyForm mArgForm mResult
+        doPage scope call mParams True mKeyForm mArgForm mResult

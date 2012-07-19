@@ -1,17 +1,27 @@
-{-# LANGUAGE StandaloneDeriving, OverloadedStrings, FlexibleInstances #-}
+{-# LANGUAGE
+        StandaloneDeriving
+    ,   OverloadedStrings
+    ,   FlexibleInstances
+    ,   ConstraintKinds #-}
 module EveApi.Methods (
         ApiResult (..)
+    ,   CallData (..)
     ,   CallResult
     ,   doCall
     )
     where
 
 import Prelude -- remove this when splitting into another library
+import Data.List (nubBy, sort)
+import Data.Maybe
+import Data.Monoid
+import GHC.Exts (IsString (..))
 
 import EveApi.Types
 import EveApi.Errors
 import EveApi.Orphans ()
 
+import Control.Applicative
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
@@ -28,6 +38,11 @@ import Network.HTTP.Types
 import Network.HTTP.Conduit
 import Text.XML
 
+data CallData = CallData
+    { callManager :: Manager
+    , callParams  :: CallParams
+    }
+
 data ApiResult = Success
                     Text        -- ^ raw response xml
 --                    Document    -- ^ response DOM tree
@@ -37,52 +52,102 @@ data ApiResult = Success
                | NotImplemented
                | NotRecognised
     deriving (Show, Eq, Ord)
-type CallResult m = ResourceT (ReaderT Manager (ExceptionT m)) ApiResult
+type CallResult m a = ResourceT (ReaderT CallData (ExceptionT m)) a
+type CallContext m = (MonadIO m, MonadUnsafeIO m, MonadBaseControl IO m)
 
 -- This supposedly fails the coverage condition, though it should hold transitively
 -- TODO: determine whether UndecidableInstances is harmless, and if so, add it
 --instance MonadReader r m => MonadReader r (ResourceT m) where
 --    ask = lift ask
 
+-- TODO: parametrize on hostname
+callBaseURL :: Scope -> Call -> Either HttpException (Request m)
+callBaseURL scope call = case call of
+    CallList -> callBaseURL' "calllist"
+    _        -> callBaseURL' (show call)
+    where callBaseURL' callS = parseUrl $
+            "https://api.eveonline.com/"
+            ++ scopeString scope ++ "/"
+            ++ callS ++ ".xml.aspx"
+
+-- | Worker function. This takes the call parameters and actually makes the call.
+makeCall :: CallContext m =>
+              Scope -> Call -> Maybe Key -> [APIArgument] -> CallResult m ApiResult
+makeCall scope call mKey' args' = do
+    mParams <- checkParams mKey' args'
+    case mParams of
+        Nothing -> return $ UserError "Bad arguments"
+        Just (mKey, args) -> case callBaseURL scope call of
+            Left  exc -> lift $ monadThrow exc
+            Right req' -> do
+                let keyargs = maybe []
+                                    (\(Key keyid vcode _) ->
+                                        [("keyID", BU.fromString $ show keyid)
+                                        ,("vCode", encodeUtf8 vcode)])
+                                    mKey
+                    req = urlEncodedBody (map argToParam args ++ keyargs) req'
+                Response s@(Status statuscode _) _ headers body <-
+                    httpLbs req =<< lift (asks callManager)
+                case statuscode of
+                    200 -> return . Success . decodeUtf8 $
+                            B.concat . toChunks $ body
+                        -- TODO: parse and determine if the API returned an error
+                    _   -> lift . monadThrow $
+                            StatusCodeException s headers
+
+checkParams :: CallContext m => Maybe Key -> [APIArgument]
+                                    -> CallResult m (Maybe (Maybe Key, [APIArgument]))
+checkParams mKey args = do
+    (CallParams keyType argList) <- lift $ asks callParams
+    let mmKey = case (keyType, mKey) of
+            (NoKey, Nothing) -> Just Nothing -- no key for this call
+            (NoKey, Just _)  -> Nothing      -- provided key when none needed
+            (kt   , Nothing) | keyOpt kt == Required -> Nothing
+                             | otherwise             -> Just Nothing
+                                          -- TODO: validate key type for this call
+            (_    , Just _k) -> Just mKey -- TODO: validate access mask for this call
+        hasKey = isJust mmKey && isJust (fromJust mmKey)
+        -- Are all required args present?
+        reqPresent = and [any (matchArgSpec (argName sp)) args
+                            | sp <- argList, argOptional sp == Required]
+        -- If there's no key provided, are all FromKey args present?
+        fromKeyPresentIfNeeded =
+            hasKey
+            || and [any (matchArgSpec (argName sp)) args
+                            | sp <- argList, argOptional sp == FromKey]
+        mArgList = if not (reqPresent && fromKeyPresentIfNeeded)
+                    then Nothing
+                    else Just (nubBy sameArgType $ sort args)
+    return $ (,) <$> mmKey <*> mArgList
+
 ---------------
 -- API scope --
 ---------------
-callList :: (MonadIO m, MonadUnsafeIO m, MonadBaseControl IO m) => CallResult m
-callList =
-    case callBaseURL APIScope CallList of
-        Left  exc -> lift $ monadThrow exc
-        Right req -> do
-            Response s@(Status statuscode _) _ headers body <-
-                        httpLbs req =<< lift ask
-            case statuscode of
-                200 -> return . Success . decodeUtf8 $
-                            B.concat . toChunks $ body
-                    -- TODO: parse and determine if the API returned an error
-                _   -> lift . monadThrow $
-                            StatusCodeException s headers
+callList :: CallContext m => CallResult m ApiResult
+callList = makeCall APIScope CallList Nothing []
 
 ---------------
 -- EVE scope --
 ---------------
 
 -- Static
-certificateTree, errorList, refTypes, skillTree :: Monad m => CallResult m
-certificateTree = return NotImplemented
-errorList = return NotImplemented
-refTypes = return NotImplemented
-skillTree = return NotImplemented
+certificateTree, errorList, refTypes, skillTree :: CallContext m => CallResult m ApiResult
+certificateTree = makeCall EVEScope CertificateTree Nothing []
+errorList       = makeCall EVEScope ErrorList       Nothing []
+refTypes        = makeCall EVEScope RefTypes        Nothing []
+skillTree       = makeCall EVEScope SkillTree       Nothing []
 
 -- Dynamic, no args
-conquerableStationList, facWarStats, facWarTopStats :: Monad m => CallResult m
-conquerableStationList = return NotImplemented
-facWarStats = return NotImplemented
-facWarTopStats = return NotImplemented
+conquerableStationList, facWarStats, facWarTopStats :: CallContext m => CallResult m ApiResult
+conquerableStationList  = makeCall EVEScope ConquerableStationList  Nothing []
+facWarStats             = makeCall EVEScope FacWarStats             Nothing []
+facWarTopStats          = makeCall EVEScope FacWarTopStats          Nothing []
 
 -- Dynamic, args required
-typeName, characterName :: Monad m => [Integer] -> CallResult m
-characterInfo :: Monad m => Text -> CallResult m
-allianceList :: Monad m => Bool -> CallResult m
-characterID :: Monad m => [Text] -> CallResult m
+typeName, characterName :: CallContext m => [APIArgument] -> CallResult m ApiResult
+characterInfo           :: CallContext m =>  Text         -> CallResult m ApiResult
+allianceList            :: CallContext m =>  Bool         -> CallResult m ApiResult
+characterID             :: CallContext m => [Text]        -> CallResult m ApiResult
 typeName _ = return NotImplemented
 characterName _ = return NotImplemented
 characterInfo _ = return NotImplemented
@@ -92,22 +157,22 @@ characterID _ = return NotImplemented
 ---------------
 -- Map scope --
 ---------------
-facWarSystems, jumps, kills, sovereignty :: Monad m => CallResult m
-facWarSystems = return NotImplemented
-jumps = return NotImplemented
-kills = return NotImplemented
-sovereignty = return NotImplemented
+facWarSystems, jumps, kills, sovereignty :: CallContext m => CallResult m ApiResult
+facWarSystems   = makeCall MapScope FacWarSystems Nothing []
+jumps           = makeCall MapScope Jumps         Nothing []
+kills           = makeCall MapScope Kills         Nothing []
+sovereignty     = makeCall MapScope Sovereignty   Nothing []
 
 ------------------
 -- Server scope --
 ------------------
-serverStatus :: Monad m => CallResult m
-serverStatus = return NotImplemented
+serverStatus :: CallContext m => CallResult m ApiResult
+serverStatus = makeCall ServerScope ServerStatus Nothing []
 
 -------------------
 -- Account scope --
 -------------------
-apiKeyInfo, accountStatus, characters :: Monad m => Key -> CallResult m
+apiKeyInfo, accountStatus, characters :: CallContext m => Key -> CallResult m ApiResult
 apiKeyInfo _ = return NotImplemented
 accountStatus _ = return NotImplemented
 characters _ = return NotImplemented
@@ -117,17 +182,16 @@ characters _ = return NotImplemented
 ----------------
 
 -- Public info if no key
-corporationSheet :: Monad m => Either Key Integer -> CallResult m
+corporationSheet :: CallContext m => Either Key Integer -> CallResult m ApiResult
 corporationSheet _ = return NotImplemented
 
 -- No args
-corpAccountBalance, corpAssetList, corpContactList :: Monad m => Key -> CallResult m
-containerLog, corpContractBids :: Monad m => Key -> CallResult m
-corpFacWarStats, corpIndustryJobs, corpMedals :: Monad m => Key -> CallResult m
-memberMedals, memberSecurity :: Monad m => Key -> CallResult m
-memberSecurityLog, outpostList :: Monad m => Key -> CallResult m
-shareholders, corpStandings, starbaseList :: Monad m => Key -> CallResult m
-titles :: Monad m => Key -> CallResult m
+corpAccountBalance, corpAssetList               :: CallContext m => Key -> CallResult m ApiResult
+corpContactList, containerLog, corpContractBids :: CallContext m => Key -> CallResult m ApiResult
+corpFacWarStats, corpIndustryJobs, corpMedals   :: CallContext m => Key -> CallResult m ApiResult
+memberMedals, memberSecurity, memberSecurityLog :: CallContext m => Key -> CallResult m ApiResult
+outpostList, shareholders, corpStandings        :: CallContext m => Key -> CallResult m ApiResult
+starbaseList, titles                            :: CallContext m => Key -> CallResult m ApiResult
 corpAccountBalance _ = return NotImplemented
 corpAssetList _ = return NotImplemented
 corpContactList _ = return NotImplemented
@@ -146,15 +210,14 @@ starbaseList _ = return NotImplemented
 titles _ = return NotImplemented
 
 -- One arg
-corpLocations      :: Monad m => Key ->       [Integer] -> CallResult m
-corpContracts      :: Monad m => Key ->  Maybe Integer  -> CallResult m
-corpContractItems  :: Monad m => Key ->        Integer  -> CallResult m
-corpKillLog        :: Monad m => Key ->  Maybe Integer  -> CallResult m
-corpMarketOrders   :: Monad m => Key ->  Maybe Integer  -> CallResult m
-memberTracking :: Monad m => Key ->        Bool     -> CallResult m
-starbaseDetail :: Monad m => Key ->        Integer  -> CallResult m
-outpostServiceDetail
-                   :: Monad m => Key ->        Integer  -> CallResult m
+corpLocations        :: CallContext m => Key ->       [Integer] -> CallResult m ApiResult
+corpContracts        :: CallContext m => Key ->  Maybe Integer  -> CallResult m ApiResult
+corpContractItems    :: CallContext m => Key ->        Integer  -> CallResult m ApiResult
+corpKillLog          :: CallContext m => Key ->  Maybe Integer  -> CallResult m ApiResult
+corpMarketOrders     :: CallContext m => Key ->  Maybe Integer  -> CallResult m ApiResult
+memberTracking       :: CallContext m => Key ->        Bool     -> CallResult m ApiResult
+starbaseDetail       :: CallContext m => Key ->        Integer  -> CallResult m ApiResult
+outpostServiceDetail :: CallContext m => Key ->        Integer  -> CallResult m ApiResult
 corpLocations _ _ = return NotImplemented
 corpContracts _ _ = return NotImplemented
 corpContractItems _ _ = return NotImplemented
@@ -165,11 +228,8 @@ starbaseDetail _ _ = return NotImplemented
 outpostServiceDetail _ _ = return NotImplemented
 
 -- Up to 3 args
-corpWalletJournal
-    :: Monad m => Key -> Maybe Int -> Maybe Int -> Maybe Int -> CallResult m
-corpWalletTransactions
-    :: Monad m => Key -> Maybe Int -> Maybe Int -> Maybe Int -> CallResult m
-
+corpWalletJournal, corpWalletTransactions
+    :: CallContext m => Key -> Maybe Int -> Maybe Int -> Maybe Int -> CallResult m ApiResult
 corpWalletJournal _ _ _ _ = return NotImplemented
 corpWalletTransactions _ _ _ _ = return NotImplemented
 
@@ -178,23 +238,23 @@ corpWalletTransactions _ _ _ _ = return NotImplemented
 ----------------
 
 -- One arg, namely character ID for multi-character keys
-charAccountBalance     :: Monad m => Key -> Maybe Integer -> CallResult m
-charAssetList          :: Monad m => Key -> Maybe Integer -> CallResult m
-characterSheet         :: Monad m => Key -> Maybe Integer -> CallResult m
-charContactList        :: Monad m => Key -> Maybe Integer -> CallResult m
-contactNotifications   :: Monad m => Key -> Maybe Integer -> CallResult m
-charContractBids       :: Monad m => Key -> Maybe Integer -> CallResult m
-charFacWarStats        :: Monad m => Key -> Maybe Integer -> CallResult m
-charIndustryJobs       :: Monad m => Key -> Maybe Integer -> CallResult m
-mailingLists           :: Monad m => Key -> Maybe Integer -> CallResult m
-mailMessages           :: Monad m => Key -> Maybe Integer -> CallResult m
-charMedals             :: Monad m => Key -> Maybe Integer -> CallResult m
-notifications          :: Monad m => Key -> Maybe Integer -> CallResult m
-research               :: Monad m => Key -> Maybe Integer -> CallResult m
-skillInTraining        :: Monad m => Key -> Maybe Integer -> CallResult m
-skillQueue             :: Monad m => Key -> Maybe Integer -> CallResult m
-charStandings          :: Monad m => Key -> Maybe Integer -> CallResult m
-upcomingCalendarEvents :: Monad m => Key -> Maybe Integer -> CallResult m
+charAccountBalance     :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+charAssetList          :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+characterSheet         :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+charContactList        :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+contactNotifications   :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+charContractBids       :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+charFacWarStats        :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+charIndustryJobs       :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+mailingLists           :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+mailMessages           :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+charMedals             :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+notifications          :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+research               :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+skillInTraining        :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+skillQueue             :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+charStandings          :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
+upcomingCalendarEvents :: CallContext m => Key -> Maybe Integer -> CallResult m ApiResult
 charAccountBalance _ _ = return NotImplemented
 charAssetList _ _ = return NotImplemented
 characterSheet _ _ = return NotImplemented
@@ -214,14 +274,14 @@ charStandings _ _ = return NotImplemented
 upcomingCalendarEvents _ _ = return NotImplemented
 
 -- 2 args, first being character ID blah blah
-charContractItems      :: Monad m => Key -> Integer -> Integer -> CallResult m
-charContracts          :: Monad m => Key -> Integer -> Maybe Integer -> CallResult m
-charMarketOrders       :: Monad m => Key -> Integer -> Maybe Integer -> CallResult m
-charKillLog            :: Monad m => Key -> Integer -> Maybe Integer -> CallResult m
-mailBodies             :: Monad m => Key -> Integer -> [Integer] -> CallResult m
-notificationTexts      :: Monad m => Key -> Integer -> [Integer] -> CallResult m
-calendarEventAttendees :: Monad m => Key -> Integer -> [Integer] -> CallResult m
-charLocations          :: Monad m => Key -> Integer -> [Integer] -> CallResult m
+charContractItems :: CallContext m => Key -> Integer ->       Integer  -> CallResult m ApiResult
+charContracts     :: CallContext m => Key -> Integer -> Maybe Integer  -> CallResult m ApiResult
+charMarketOrders  :: CallContext m => Key -> Integer -> Maybe Integer  -> CallResult m ApiResult
+charKillLog       :: CallContext m => Key -> Integer -> Maybe Integer  -> CallResult m ApiResult
+mailBodies        :: CallContext m => Key -> Integer ->      [Integer] -> CallResult m ApiResult
+notificationTexts :: CallContext m => Key -> Integer ->      [Integer] -> CallResult m ApiResult
+calendarEventAttendees :: CallContext m => Key -> Integer -> [Integer] -> CallResult m ApiResult
+charLocations     :: CallContext m => Key -> Integer ->      [Integer] -> CallResult m ApiResult
 charContractItems _ _ _ = return NotImplemented
 charContracts _ _ _ = return NotImplemented
 charMarketOrders _ _ _ = return NotImplemented
@@ -235,8 +295,8 @@ charLocations _ _ _ = return NotImplemented
 -- Convert args to query parameters --
 --------------------------------------
 
-listify :: (a -> ByteString) -> [a] -> ByteString
-listify sh xs = B.concat . intersperse "," . map sh $ xs
+listify :: (Monoid s, IsString s) => (a -> s) -> [a] -> s
+listify sh xs = mconcat . intersperse "," . map sh $ xs
 
 argToParam :: APIArgument -> (ByteString, ByteString)
 argToParam (ArgIDs           ids)        = ("IDs", listify (BU.fromString . show) ids)
@@ -268,10 +328,9 @@ argToParam (ArgItemID        itemid)     = ("itemID", BU.fromString $
 -- Make the call --
 -------------------
 
-doCall :: (MonadIO m, MonadUnsafeIO m, MonadThrow m,
-           MonadBaseControl IO m) =>
+doCall :: (CallContext m, MonadThrow m) =>
     Scope -> Call -> Maybe Key -> [APIArgument] ->
-             ReaderT Manager (ExceptionT m) ApiResult
+             ReaderT CallData (ExceptionT m) ApiResult
 doCall scope call mKey mArgs = do
     runResourceT $ case (scope, call) of
         (APIScope, CallList) -> callList

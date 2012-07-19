@@ -11,11 +11,11 @@ import qualified Data.Map as M
 -- List of calls by valid set of arguments. --
 ----------------------------------------------
 
-apiCalls :: Map (Call, Scope) CallArgs
+apiCalls :: Map (Call, Scope) CallParams
 apiCalls = M.fromList $
     -- Public calls that need no auth and take no arguments
-    [((CallList, APIScope), CallArgs NoKey [])] ++
-    map (\name -> ((name, EVEScope), CallArgs NoKey []))
+    [((CallList, APIScope), CallParams NoKey [])] ++
+    map (\name -> ((name, EVEScope), CallParams NoKey []))
         [CertificateTree        -- static
         ,ErrorList              -- static
         ,RefTypes               -- static
@@ -24,31 +24,31 @@ apiCalls = M.fromList $
         ,FacWarStats
         ,FacWarTopStats
         ] ++
-    map (\name -> ((name, MapScope), CallArgs NoKey []))
+    map (\name -> ((name, MapScope), CallParams NoKey []))
         [FacWarSystems
         ,Jumps
         ,Kills
         ,Sovereignty
         ] ++
-    [((ServerStatus, ServerScope), CallArgs NoKey [])
+    [((ServerStatus, ServerScope), CallParams NoKey [])
     -- Public calls that need no auth, but take arguments
-    ,((TypeName, EVEScope), CallArgs NoKey [Arg ArgTIDs AIntList Mandatory])
-    ,((AllianceList, EVEScope), CallArgs NoKey [Arg ArgTVersion AInteger Optional])
-    ,((CharacterID, EVEScope), CallArgs NoKey [Arg ArgTNames AStringList Mandatory])
-    ,((CharacterName, EVEScope), CallArgs NoKey [Arg ArgTIDs AIntList Mandatory])
+    ,((TypeName, EVEScope), CallParams NoKey [Arg ArgTIDs AIntList Required])
+    ,((AllianceList, EVEScope), CallParams NoKey [Arg ArgTVersion AInteger Optional])
+    ,((CharacterID, EVEScope), CallParams NoKey [Arg ArgTNames AStringList Required])
+    ,((CharacterName, EVEScope), CallParams NoKey [Arg ArgTIDs AIntList Required])
     -- Public calls with optional auth (exposing extra information)
     -- Character or corp must be specified, but should be inferred from the key
     -- if provided, not explicitly given.
     ,((CharacterInfo, EVEScope),
-        CallArgs (CharKey Optional) [Arg ArgTCharacterID AInteger FromKey])
+        CallParams (CharKey Optional) [Arg ArgTCharacterID AInteger FromKey])
     ,((CorporationSheet, CorpScope),
-        CallArgs (CorpKey Optional) [Arg ArgTCorporationID AInteger FromKey])
+        CallParams (CorpKey Optional) [Arg ArgTCorporationID AInteger FromKey])
     -- Private calls, requiring a key in all cases.
-    ,((APIKeyInfo, AcctScope), CallArgs (AnyKey Mandatory) [])
-    ,((AccountStatus, AcctScope), CallArgs (CharKey Mandatory) [])
-    ,((Characters, AcctScope), CallArgs (CharKey Mandatory) [])] ++
+    ,((APIKeyInfo, AcctScope), CallParams (AnyKey Required) [])
+    ,((AccountStatus, AcctScope), CallParams (CharKey Required) [])
+    ,((Characters, AcctScope), CallParams (CharKey Required) [])] ++
     -- Corp calls, no args
-    map (\name -> ((name, CorpScope), CallArgs (CorpKey Mandatory) []))
+    map (\name -> ((name, CorpScope), CallParams (CorpKey Required) []))
         [AccountBalance   -- ignores accountKey
         ,AssetList
         ,ContactList
@@ -66,7 +66,7 @@ apiCalls = M.fromList $
         ,StarbaseList
         ,Titles] ++
     -- Character calls, no args
-    map (\name -> ((name, CharScope), CallArgs (CharKey Mandatory) []))
+    map (\name -> ((name, CharScope), CallParams (CharKey Required) []))
         [AccountBalance
         ,AssetList
         ,CharacterSheet
@@ -86,61 +86,61 @@ apiCalls = M.fromList $
         ,UpcomingCalendarEvents] ++
     -- Mail bodies, notification texts and item locations; take list of IDs
     map (\name -> ((name, CharScope),
-            CallArgs (CharKey Mandatory) [Arg ArgTIDs AIntList Mandatory]))
+            CallParams (CharKey Required) [Arg ArgTIDs AIntList Required]))
         [Locations, MailBodies, NotificationTexts] ++
     [((Locations, CorpScope),
-        CallArgs (CharKey Mandatory) [Arg ArgTIDs AIntList Mandatory])
+        CallParams (CharKey Required) [Arg ArgTIDs AIntList Required])
     -- Calendar event attendees, takes list of event IDs
     ,((CalendarEventAttendees, CharScope),
-        CallArgs (CharKey Mandatory) [Arg ArgTEventIDs AIntList Mandatory])
+        CallParams (CharKey Required) [Arg ArgTEventIDs AIntList Required])
     -- Contracts. contractID to check only one contract
     ,((Contracts, CharScope),
-        CallArgs (CharKey Mandatory) [Arg ArgTContractID AInteger Optional])
+        CallParams (CharKey Required) [Arg ArgTContractID AInteger Optional])
     ,((ContractItems, CharScope),
-        CallArgs (CharKey Mandatory) [Arg ArgTContractID AInteger Mandatory])
+        CallParams (CharKey Required) [Arg ArgTContractID AInteger Required])
     ,((Contracts, CorpScope),
-        CallArgs (CorpKey Mandatory) [Arg ArgTContractID AInteger Optional])
+        CallParams (CorpKey Required) [Arg ArgTContractID AInteger Optional])
     ,((ContractItems, CorpScope),
-        CallArgs (CorpKey Mandatory) [Arg ArgTContractID AInteger Mandatory])
+        CallParams (CorpKey Required) [Arg ArgTContractID AInteger Required])
     -- Kill log. beforeKillID to check old kills
     ,((KillLog, CharScope),
-        CallArgs (CharKey Mandatory) [Arg ArgTBeforeKillID AInteger Optional])
+        CallParams (CharKey Required) [Arg ArgTBeforeKillID AInteger Optional])
     ,((KillLog, CorpScope),
-        CallArgs (CorpKey Mandatory) [Arg ArgTBeforeKillID AInteger Optional])
+        CallParams (CorpKey Required) [Arg ArgTBeforeKillID AInteger Optional])
     --  Market orders. orderID to fetch a closed order
     ,((MarketOrders, CharScope),
-        CallArgs (CharKey Mandatory) [Arg ArgTOrderID AInteger Optional])
+        CallParams (CharKey Required) [Arg ArgTOrderID AInteger Optional])
     ,((MarketOrders, CorpScope),
-        CallArgs (CorpKey Mandatory) [Arg ArgTOrderID AInteger Optional])
+        CallParams (CorpKey Required) [Arg ArgTOrderID AInteger Optional])
     -- Corp member tracking. extended=1 for extended info
     ,((MemberTracking, CorpScope),
-        CallArgs (CorpKey Mandatory) [Arg ArgTExtended AInteger Optional])
+        CallParams (CorpKey Required) [Arg ArgTExtended AInteger Optional])
     -- Wallet journal / transactions, optional args:
     -- - number of rows to return (default 50 / 1000, max 2560)
     -- - last entry to work back from (for fetching >2560 entries)
     -- - code for account division, 1000-1006 (default all (that character has
     --   access to?), not needed for characters)
     ,((WalletJournal, CharScope),
-        CallArgs (CharKey Mandatory)
+        CallParams (CharKey Required)
             [Arg ArgTRowCount AInteger Optional
             ,Arg ArgTFromID AInteger Optional])
     ,((WalletJournal, CorpScope),
-        CallArgs (CorpKey Mandatory)
+        CallParams (CorpKey Required)
             [Arg ArgTRowCount AInteger Optional
             ,Arg ArgTFromID AInteger Optional
             ,Arg ArgTAccountKey AInteger Optional])
     ,((WalletTransactions, CharScope),
-        CallArgs (CharKey Mandatory)
+        CallParams (CharKey Required)
             [Arg ArgTRowCount AInteger Optional
             ,Arg ArgTFromID AInteger Optional])
     ,((WalletTransactions, CorpScope),
-        CallArgs (CorpKey Mandatory)
+        CallParams (CorpKey Required)
             [Arg ArgTRowCount AInteger Optional
             ,Arg ArgTFromID AInteger Optional
             ,Arg ArgTAccountKey AInteger Optional])
     -- Starbase / outpost details, takes itemID of control tower / outpost
     ,((StarbaseDetail, CorpScope),
-        CallArgs (CorpKey Mandatory) [Arg ArgTItemID AInteger Mandatory])
+        CallParams (CorpKey Required) [Arg ArgTItemID AInteger Required])
     ,((OutpostServiceDetail, CorpScope),
-        CallArgs (CorpKey Mandatory) [Arg ArgTItemID AInteger Mandatory])
+        CallParams (CorpKey Required) [Arg ArgTItemID AInteger Required])
     ]

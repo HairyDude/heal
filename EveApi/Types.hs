@@ -6,6 +6,8 @@ module EveApi.Types
     , WalletDivision (..)
     , APIArgument (..)
     , APIArgumentType (..)
+    , matchArgSpec  -- :: APIArgumentType -> APIArgument -> Bool
+    , sameArgType   -- :: APIArgument -> APIArgument -> Bool
     , argString     -- :: IsString s => APIArgumentType -> s
     , Key (..)
     , KeyScope (..)
@@ -15,10 +17,9 @@ module EveApi.Types
     , Scope (..)
     , scopeString   -- :: IsString s => Scope -> s
     , stringScope   -- :: (Eq s, IsString s) => s => Maybe Scope
-    , CallArgs (..)
+    , CallParams (..)
     , FullCall (..)
     , Call (..)
-    , callBaseURL   -- :: Failure HttpException m => (Call,Scope) -> m (Request m')
     , InvFlag   -- don't export "unused" InvFlags
         ( None, Wallet, Factory, Hangar, Cargo, Briefcase, Skill, Reward
         , Connected, Disconnected, LoSlot0, LoSlot1, LoSlot2, LoSlot3, LoSlot4
@@ -53,7 +54,7 @@ where
 
 import Prelude
     (   -- classes
-        Eq (..), Ord (..), Show (..), Read (..), Enum (..), Bounded (..)
+        Eq (..), Ord (..), Show (..), Read (..), Enum (..), Bounded (..), Bool (..)
         -- types
     ,   Int, Integer, Bool, Maybe (..), Either (..)
         -- operators
@@ -63,13 +64,7 @@ import Prelude
     )
 
 import Data.Text (Text)
---import qualified Data.Text as T
---import Data.Map (Map)
---import qualified Data.Map as M
 import Data.String
-
-import Network.HTTP.Conduit
---import Control.Failure
 
 data APIDataType = AInteger -- any integer type, distinctions are unimportant
                  | ABigint  -- (except bigints)
@@ -100,7 +95,7 @@ data Optional = Optional
                         -- multi-character keys.
                         -- Do not use ID if not needed. E.g. CorporationSheet
                         -- ignores the key if a corporationID is provideed.
-              | Mandatory
+              | Required
     deriving (Eq, Ord, Show, Read, Enum)
 
 newtype WalletDivision = WalletDivision Int deriving (Eq, Ord, Show, Read)
@@ -137,6 +132,40 @@ data APIArgumentType
     | ArgTAccountKey
     | ArgTItemID
     deriving (Eq, Ord, Show, Read)
+
+matchArgSpec :: APIArgumentType -> APIArgument -> Bool
+matchArgSpec ArgTIDs           (ArgIDs _)           = True
+matchArgSpec ArgTVersion       (ArgVersion _)       = True
+matchArgSpec ArgTNames         (ArgNames _)         = True
+matchArgSpec ArgTCharacterID   (ArgCharacterID _)   = True
+matchArgSpec ArgTCorporationID (ArgCorporationID _) = True
+matchArgSpec ArgTEventIDs      (ArgEventIDs _)      = True
+matchArgSpec ArgTContractID    (ArgContractID _)    = True
+matchArgSpec ArgTBeforeKillID  (ArgBeforeKillID _)  = True
+matchArgSpec ArgTOrderID       (ArgOrderID _)       = True
+matchArgSpec ArgTExtended      (ArgExtended _)      = True
+matchArgSpec ArgTRowCount      (ArgRowCount _)      = True
+matchArgSpec ArgTFromID        (ArgFromID _)        = True
+matchArgSpec ArgTAccountKey    (ArgAccountKey _)    = True
+matchArgSpec ArgTItemID        (ArgItemID _)        = True
+matchArgSpec _                 _                    = False
+
+sameArgType :: APIArgument -> APIArgument -> Bool
+sameArgType (ArgIDs           _) (ArgIDs           _) = True
+sameArgType (ArgVersion       _) (ArgVersion       _) = True
+sameArgType (ArgNames         _) (ArgNames         _) = True
+sameArgType (ArgCharacterID   _) (ArgCharacterID   _) = True
+sameArgType (ArgCorporationID _) (ArgCorporationID _) = True
+sameArgType (ArgEventIDs      _) (ArgEventIDs      _) = True
+sameArgType (ArgContractID    _) (ArgContractID    _) = True
+sameArgType (ArgBeforeKillID  _) (ArgBeforeKillID  _) = True
+sameArgType (ArgOrderID       _) (ArgOrderID       _) = True
+sameArgType (ArgExtended      _) (ArgExtended      _) = True
+sameArgType (ArgRowCount      _) (ArgRowCount      _) = True
+sameArgType (ArgFromID        _) (ArgFromID        _) = True
+sameArgType (ArgAccountKey    _) (ArgAccountKey    _) = True
+sameArgType (ArgItemID        _) (ArgItemID        _) = True
+sameArgType _                    _                    = False
 
 argString :: IsString s => APIArgumentType -> s
 argString ArgTIDs           = "IDs"
@@ -219,7 +248,7 @@ stringScope "map"     = Just MapScope
 stringScope "server"  = Just ServerScope
 stringScope _         = Nothing
 
-data CallArgs = CallArgs
+data CallParams = CallParams
         { callKey  :: KeyType
         , callArgs     :: [Arg] }
     deriving (Show, Eq, Ord)
@@ -247,15 +276,6 @@ data Call
     | StarbaseDetail | StarbaseList | TypeName | Titles | UpcomingCalendarEvents
     | WalletJournal | WalletTransactions
     deriving (Show, Eq, Ord, Read, Enum, Bounded)
-
-callBaseURL :: Scope -> Call -> Either HttpException (Request m)
-callBaseURL scope call = case call of
-    CallList -> callBaseURL' "calllist"
-    _        -> callBaseURL' (show call)
-    where callBaseURL' callS = parseUrl $
-            "https://api.eveonline.com/"
-            ++ scopeString scope ++ "/"
-            ++ callS ++ ".xml.aspx"
 
 --------------------------------------------------------------------------------
 
