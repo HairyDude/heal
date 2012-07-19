@@ -7,7 +7,7 @@ module Application
 
 import Import
 import Settings
-import Yesod.Auth
+--import Yesod.Auth
 import Yesod.Default.Config
 import Yesod.Default.Main
 import Yesod.Default.Handlers
@@ -25,6 +25,8 @@ import Handler.Call
 -- This line actually creates our YesodSite instance. It is the second half
 -- of the call to mkYesodData which occurs in Foundation.hs. Please see
 -- the comments there for more details.
+-- This generates an orphan "instance YesodDispatch App App" which provokes a
+-- warning unless we turn them off, hence the pragma.
 mkYesodDispatch "App" resourcesApp
 
 -- This function allocates resources (such as a database connection pool),

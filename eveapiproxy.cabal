@@ -25,7 +25,9 @@ library
                      Foundation
                      Import
                      Model
+                     Orphans
                      EveApi.Errors
+                     EveApi.Orphans
                      EveApi.Methods
                      EveApi.Types
                      EveApi.Values

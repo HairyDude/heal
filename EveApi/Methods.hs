@@ -10,6 +10,7 @@ import Prelude -- remove this when splitting into another library
 
 import EveApi.Types
 import EveApi.Errors
+import EveApi.Orphans ()
 
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -26,9 +27,6 @@ import Data.List (intersperse)
 import Network.HTTP.Types
 import Network.HTTP.Conduit
 import Text.XML
-
-instance MonadIO m => MonadIO (ExceptionT m) where
-    liftIO = lift . liftIO
 
 data ApiResult = Success
                     Text        -- ^ raw response xml

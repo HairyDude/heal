@@ -7,7 +7,6 @@ import EveApi.Values
 import EveApi.Methods
 import ModelUtils
 
-import Control.Monad (join, liftM2)
 import Control.Monad.Reader (runReaderT)
 import Control.Monad.Error hiding (sequence)
 import Control.Monad.Trans.Resource
@@ -39,11 +38,11 @@ characterName = (\x y z -> x <> y <> z)
 moptreq :: RenderMessage App FormMessage =>
             Bool -> Field App App a -> FieldSettings App -> Maybe a
                  -> MForm App App (FormResult (Maybe a), FieldView App App)
-moptreq req field settings def =
+moptreq req field fsettings def =
             if req
             then (\(r,w) -> (Just <$> r,w)) <$>
-                    mreq field settings def
-            else mopt field settings (Just def)
+                    mreq field fsettings def
+            else mopt field fsettings (Just def)
 
 keyForm :: CallArgs -> Form (Maybe Key) -- return type (FormResult x, Widget)
 keyForm (CallArgs keyType _) = renderDivs $ formToAForm $
@@ -91,7 +90,7 @@ argForm call (CallArgs _ args) hasKey = do
                                 map (fmap return . fst) $ results
                 allfields = concatMap snd results
             return (allresults, allfields)
-        notImplemented = return (FormFailure ["Not implemented"], [])
+        --notImplemented = return (FormFailure ["Not implemented"], [])
     consolidate $ forM args $ \(Arg name _atype opt) -> do
         let req = opt == Mandatory  -- Check later in case opt == FromKey
             -- Do the following:
@@ -107,8 +106,8 @@ argForm call (CallArgs _ args) hasKey = do
                           -> (Maybe a -> FormResult (Maybe b))
                           -> MForm App App (FormResult (Maybe APIArgument),
                                             [FieldView App App])
-            mkfield constr fieldtype settings def process = do
-                (result, field) <- moptreq req fieldtype settings def
+            mkfield constr fieldtype fsettings def process = do
+                (result, field) <- moptreq req fieldtype fsettings def
                 case result of
                     FormSuccess a  -> return (fmap constr <$> process a,
                                                                     [field])
@@ -122,8 +121,8 @@ argForm call (CallArgs _ args) hasKey = do
                                    -> MForm App App
                                         (FormResult (Maybe APIArgument),
                                          [FieldView App App])
-            parseListField constr settings errmsg parser def
-                = mkfield constr textField settings def $ \rawlist ->
+            parseListField constr fsettings errmsg parser def
+                = mkfield constr textField fsettings def $ \rawlist ->
                     let maybeElems = parseList parser =<< rawlist
                     in  maybe (FormFailure [errmsg])
                               (\elems -> FormSuccess $ Just elems)
@@ -206,9 +205,9 @@ argForm call (CallArgs _ args) hasKey = do
                 mkfield ArgAccountKey (selectField opts) "Wallet division:"
                     Nothing $ -- XXX: check if there should be a default
                     maybe (FormSuccess Nothing)
-                          (\div ->
-                            if div `elem` [1000..1006]
-                                then FormSuccess (Just (WalletDivision div))
+                          (\division ->
+                            if division `elem` [1000..1006]
+                                then FormSuccess (Just (WalletDivision division))
                                 else FormFailure ["Invalid wallet division"])
                     where opts = return $ mkOptionList
                             [Option ("Division " <> d')
@@ -257,15 +256,15 @@ doPage scope call mArgs wasPost mKeyForm mArgForm mResult = do
                             _     -> True)
                         mArgs
         (mKeyWidg, keyEnctype) = maybe (Nothing, UrlEncoded)
-                                       (\((keyRes, widg),enctype) ->
+                                       (\((keyRes, widg),keyenctype) ->
                                             (if wantKey then Just (keyRes, widg)
                                                         else Nothing,
-                                             enctype))
+                                             keyenctype))
                                        mKeyForm
         (mArgWidg, argEnctype) = maybe (Nothing, UrlEncoded)
-                                       (\((argRes,widg),enctype) ->
+                                       (\((argRes,widg),argenctype) ->
                                             (Just (argRes, widg),
-                                             enctype))
+                                             argenctype))
                                        mArgForm
         enctype = keyEnctype <> argEnctype
     defaultLayout $ do
@@ -303,7 +302,7 @@ postCallR scope call = do
             hasKey = isJust mKey
         mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs <*> pure hasKey)
         mResult <- case mArgForm of
-            Just ((res, xml), enctype) -> case res of
+            Just ((res, _), _) -> case res of
                 FormSuccess args -> do
                     manager <- httpManager <$> getYesod
                     eRes <- runExceptionT $

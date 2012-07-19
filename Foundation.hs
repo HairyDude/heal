@@ -16,8 +16,8 @@ import Prelude
 import Yesod
 import Yesod.Static
 import Yesod.Auth
-import Yesod.Auth.BrowserId
-import Yesod.Auth.GoogleEmail
+--import Yesod.Auth.BrowserId
+--import Yesod.Auth.GoogleEmail
 import Yesod.Default.Config
 import Yesod.Default.Util (addStaticContentExternal)
 import Yesod.Logger (Logger, logMsg, formatLogText)
@@ -33,18 +33,8 @@ import Web.ClientSession (getKey)
 import Text.Hamlet (hamletFile)
 
 -- added
-import qualified Data.Text as T
 import EveApi.Types
-import Utils -- not to be confused with Util!
-
-instance PathPiece Call where
-    toPathPiece CallList = "calllist"
-    toPathPiece c        = T.pack $ show c
-    fromPathPiece "calllist" = Just CallList
-    fromPathPiece s          = maybeRead (T.unpack s)
-instance PathPiece Scope where
-    toPathPiece   = scopeString
-    fromPathPiece = stringScope
+import Orphans ()
 
 -- | The site argument for your application. This can be a good place to
 -- keep settings and values requiring initialization before your application

@@ -69,7 +69,7 @@ import Data.Text (Text)
 import Data.String
 
 import Network.HTTP.Conduit
-import Control.Failure
+--import Control.Failure
 
 data APIDataType = AInteger -- any integer type, distinctions are unimportant
                  | ABigint  -- (except bigints)
@@ -80,7 +80,7 @@ data APIDataType = AInteger -- any integer type, distinctions are unimportant
                  | ADateString
                  | AIntList
                  | AStringList
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Read)
 
 typeString :: IsString s => APIDataType -> s
 typeString AInteger    = "int"
@@ -101,7 +101,7 @@ data Optional = Optional
                         -- Do not use ID if not needed. E.g. CorporationSheet
                         -- ignores the key if a corporationID is provideed.
               | Mandatory
-    deriving (Eq, Ord, Show, Enum)
+    deriving (Eq, Ord, Show, Read, Enum)
 
 newtype WalletDivision = WalletDivision Int deriving (Eq, Ord, Show, Read)
                                     -- range: 1000 - 1006
@@ -136,7 +136,7 @@ data APIArgumentType
     | ArgTFromID
     | ArgTAccountKey
     | ArgTItemID
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Read)
 
 argString :: IsString s => APIArgumentType -> s
 argString ArgTIDs           = "IDs"
@@ -183,13 +183,13 @@ data KeyType = NoKey
              | AnyKey  { keyOpt :: Optional } -- e.g. api/APIKeyInfo
              | CorpKey { keyOpt :: Optional }
              | CharKey { keyOpt :: Optional }
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Read)
 
 -- Arguments other than keys (and characterIDs that are implied by a key).
 data Arg = Arg { argName :: APIArgumentType
                , argType :: APIDataType
                , argOptional :: Optional }
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, Read)
 
 data Scope = AcctScope
            | APIScope
@@ -221,7 +221,7 @@ stringScope _         = Nothing
 
 data CallArgs = CallArgs
         { callKey  :: KeyType
-        , args     :: [Arg] }
+        , callArgs     :: [Arg] }
     deriving (Show, Eq, Ord)
 
 data FullCall = FullCall Scope Call (Maybe Key) [APIArgument]
