@@ -1,12 +1,14 @@
 module Handler.Call where
 
-import Import hiding (Key, sequence) -- clashes with custom type
+import Import hiding (
+        Key -- clashes with custom type
+    ,   sequence
+    )
 
 import EveApi.Types
 import EveApi.Values
 import EveApi.Methods
 import ModelUtils
-import Utils
 
 import Control.Monad.Reader (runReaderT)
 import Control.Monad.Error hiding (sequence)
@@ -19,11 +21,15 @@ import Data.Traversable (sequence)
 import Data.Attoparsec.Text hiding (takeWhile)
 import qualified Data.Attoparsec.Text as AP
 
+-- Reminder:
+-- type Form a = Markup -> MForm App App (FormResult a, Widget)
+
 -- Parse a comma-separated list.
 parseList :: Parser a -> Text -> Maybe [a]
-parseList p t = case (skipSpace >> p `sepBy` char ',') `parse` t of
-    Done _ r -> Just r
-    _        -> Nothing
+parseList p t = case (skipSpace >> p `sepBy` char ',' >>= \n -> endOfInput >> return n)
+                     `parseOnly` t of
+    Right r -> Just r
+    Left  _ -> Nothing
 
 characterName :: Parser Text
 characterName = (\x y z -> x <> y <> z)
@@ -48,7 +54,7 @@ moptreq req field fsettings def =
 keyForm :: CallParams -> Form (Maybe Key) -- return type (FormResult x, Widget)
 keyForm (CallParams keyType _) = renderDivs $ formToAForm $
     case keyType of -- don't make a form if no key is needed
-        NoKey -> return (FormSuccess (Just KeyNone), mempty)
+        NoKey -> return (FormSuccess Nothing, mempty)
         _     -> do
             let req = keyOpt keyType == Required
             (frkeyid, fieldkeyid) <- moptreq req intField "Key ID:" Nothing
@@ -56,172 +62,95 @@ keyForm (CallParams keyType _) = renderDivs $ formToAForm $
             let fields :: [FieldView App App]
                 fields = [fieldkeyid, fieldvcode]
                 formFail mesgs = return (FormFailure mesgs, fields)
+                formSucceed res = return (FormSuccess res,  fields)
             case (frkeyid, frvcode) of
                 (FormSuccess mkeyid, FormSuccess mrawvcode) ->
                     -- TODO: validate vCode
                     if isNothing mkeyid || isNothing mrawvcode
                     then if req -- no key provided, but do we need one?
-                        then formFail ["This call requires a key"]
-                        else return (FormSuccess Nothing, fields)
-                    else return
-                        (FormSuccess
-                            (Just $ Key (fromJust mkeyid)
-                                        (fromJust mrawvcode)
-                                        UnknownKeyScope)
-                        ,fields)
+                        then do
+                            formFail ["This call requires a key"]
+                        else do
+                            return (FormSuccess Nothing, fields)
+                    else do
+                        return
+                            (FormSuccess
+                                (Just $ Key (fromJust mkeyid)
+                                            (fromJust mrawvcode)
+                                            UnknownKeyScope)
+                            ,fields)
                 -- Unfortunately, although FormResult has a Monoid
                 -- instance, we can't use it here because the two sides
                 -- have different types and the result yet another.
                 (FormFailure failkey, FormFailure failvcode) ->
-                    formFail (failkey ++ failvcode)
+                    if req then do
+                            formFail (failkey ++ failvcode)
+                           else formSucceed Nothing
                 (FormFailure failkey, _) ->
-                    formFail failkey
+                    if req then formFail failkey
+                           else formSucceed Nothing
                 (_, FormFailure failvcode) ->
-                    formFail failvcode
+                    if req then formFail failvcode
+                           else formSucceed Nothing
                 _ -> formFail []
 
-argForm :: Call -> CallParams -> Bool -> Form [APIArgument]
-argForm call (CallParams _ args) hasKey = do
-    let consolidate :: -- Collect results, if there's no error
-               MForm App App [(FormResult (Maybe a), [FieldView App App])]
-            -> Form [a]
-        consolidate mresults = renderDivs $ formToAForm $ do
-            results <- mresults
-            let allresults = fmap catMaybes . mconcat .
-                                map (fmap return . fst) $ results
-                allfields = concatMap snd results
-            return (allresults, allfields)
-        --notImplemented = return (FormFailure ["Not implemented"], [])
-    consolidate $ forM args $ \(Arg name _atype opt) -> do
-        let req = opt == Required  -- Check later in case opt == FromKey
-            -- Do the following:
-            -- * Use mopt or mreq as appropriate
-            -- * If there's a result, pass it to a postprocessing
-            --   function, which may return failure
-            -- * If this function succeeds, apply the provided constructor
-            -- * Put the fieldview in a list for later consolidation
-            mkfield :: (b -> APIArgument)
-                          -> Field App App a
-                          -> FieldSettings App
-                          -> Maybe a
-                          -> (Maybe a -> FormResult (Maybe b))
-                          -> MForm App App (FormResult (Maybe APIArgument),
-                                            [FieldView App App])
-            mkfield constr fieldtype fsettings def process = do
-                (result, field) <- moptreq req fieldtype fsettings def
-                case result of
-                    FormSuccess a  -> return (fmap constr <$> process a,
-                                                                    [field])
-                    FormMissing    -> return (FormMissing,          [field])
-                    FormFailure ms -> return (FormFailure ms,       [field])
-            parseListField :: ([a] -> APIArgument)  -- ^ constructor
-                                   -> FieldSettings App -- ^ field settings
-                                   -> Text          -- ^ error message
-                                   -> Parser a      -- ^ element parser
-                                   -> Maybe Text    -- ^ default
-                                   -> MForm App App
-                                        (FormResult (Maybe APIArgument),
-                                         [FieldView App App])
-            parseListField constr fsettings errmsg parser def
-                = mkfield constr textField fsettings def $ \rawlist ->
-                    let maybeElems = parseList parser =<< rawlist
-                    in  maybe (FormFailure [errmsg])
-                              (\elems -> FormSuccess $ Just elems)
-                              maybeElems
-        case name of
-            ArgTIDs -> parseListField ArgIDs
-                            "List of IDs (comma-separated):"
-                            "Invalid ID list"
-                            decimal
-                            Nothing
-            ArgTVersion -> mkfield ArgVersion checkBoxField "Include members"
-                           Nothing $
-                           FormSuccess .
-                            (maybe Nothing $ \include ->
-                                if include then Nothing else Just 1)
-                                    -- alliance list, 1 = omit member corps
-            ArgTNames -> parseListField ArgNames
-                            "List of names (comma-separated):"
-                            "Invalid name list"
-                            characterName
-                            Nothing
-            ArgTCharacterID -> case opt of
-                FromKey ->
-                    if hasKey -- Assume key is appropriate for this call
-                              -- TODO: only use it if it *is* appropriate
-                    then return (FormSuccess Nothing, []) -- ignore
-                    else mkfield ArgCharacterID intField "Character ID:"
-                            Nothing $
-                            maybe FormMissing (FormSuccess . Just)
-                Required ->
-                    mkfield ArgCharacterID intField "Character ID:" Nothing $
-                        maybe FormMissing (FormSuccess . Just)
-                Optional ->
-                    mkfield ArgCharacterID intField "Character ID:" Nothing $
-                        maybe (FormSuccess Nothing) (FormSuccess . Just)
-            ArgTCorporationID -> case opt of
-                FromKey ->
-                    if hasKey -- Assume key is appropriate for this call
-                              -- TODO: only use it if it *is* appropriate
-                    then return (FormSuccess Nothing, []) -- ignore
-                    else mkfield ArgCorporationID intField "Corporation ID:"
-                            Nothing $
-                            maybe FormMissing (FormSuccess . Just)
-                Required ->
-                    mkfield ArgCorporationID intField "Corporation ID:"
-                        Nothing $
-                        maybe FormMissing (FormSuccess . Just)
-                Optional ->
-                    mkfield ArgCorporationID intField "Corporation ID:"
-                        Nothing $
-                        maybe (FormSuccess Nothing) (FormSuccess . Just)
-            ArgTEventIDs -> parseListField ArgIDs
-                            "List of event IDs (comma-separated):"
-                            "Invalid event ID list"
-                            decimal
-                            Nothing
-            ArgTContractID ->
-                mkfield ArgContractID intField "Contract ID:" Nothing $
-                    maybe FormMissing (FormSuccess . Just)
-            ArgTBeforeKillID ->
-                mkfield ArgBeforeKillID intField "Fetch kills before kill ID:"
-                    Nothing $
-                    maybe FormMissing (FormSuccess . Just)
-            ArgTOrderID ->
-                mkfield ArgOrderID intField "Order ID:" Nothing $
-                    maybe FormMissing (FormSuccess . Just)
-            ArgTExtended -> -- for corp member tracking
-                mkfield ArgExtended checkBoxField "Extended info"
-                    Nothing $
-                    FormSuccess
-            ArgTRowCount ->
-                mkfield ArgRowCount intField "Number of rows to fetch:"
-                    Nothing $
-                    maybe FormMissing (FormSuccess . Just)
-            ArgTFromID ->
-                mkfield ArgFromID intField "Fetch entries before entry ID:"
-                    Nothing $
-                    maybe FormMissing (FormSuccess . Just)
-            ArgTAccountKey ->
-                mkfield ArgAccountKey (selectField opts) "Wallet division:"
-                    Nothing $ -- XXX: check if there should be a default
-                    maybe (FormSuccess Nothing)
-                          (\division ->
-                            if division `elem` [1000..1006]
-                                then FormSuccess (Just (WalletDivision division))
-                                else FormFailure ["Invalid wallet division"])
-                    where opts = return $ mkOptionList
-                            [Option ("Division " <> d')
-                                    (1000 + d)
-                                    (d') | d <- [0..6],
-                                           let d' = T.pack (show (succ d))]
-            ArgTItemID ->
-                let label = case call of
-                        StarbaseDetail -> "Starbase item ID:"
-                        OutpostServiceDetail -> "Outpost item ID:"
-                        _                    -> "Item ID:"
-                in  mkfield ArgItemID intField label Nothing $
-                        maybe FormMissing (FormSuccess . Just)
+aoptreq :: Field App App a              -- ^ Field to use, e.g. intField
+            -> APIArgumentType          -- ^ Argument type, e.g. characterID
+            -> Bool                     -- ^ Is this field required?
+            -> (a -> Maybe APIArgument) -- ^ Constructor to apply afterwards
+            -> AForm App App (Maybe APIArgument)
+aoptreq field name required constr =
+    (constr =<<) <$> if required
+        then Just <$> areq field (argString name) Nothing
+        else          aopt field (argString name) Nothing
+
+argForm :: Call -> CallParams -> Form [APIArgument]
+argForm call (CallParams _ args) markup = do
+    -- XXX: is mconcat correct?
+    -- Used at type [(FormResult [Maybe APIArgument],Widget)] ->
+    --               (FormResult [Maybe APIArgument],Widget)
+    -- but does it mean the right thing?
+    fmap mconcat $ forM args $ \(Arg name atype opt) -> do
+        let required = opt == Required
+        flip renderDivs markup . fmap maybeToList $ 
+            if name == ArgTVersion && call == AllianceList
+            then aoptreq checkBoxField name False (\b -> Just . ArgVersion $
+                                                            if b then 1 else 0)
+            else case atype of
+                AInteger -> aoptreq intField name required $ Just . case name of
+                    ArgTVersion -> ArgVersion
+                    ArgTCharacterID -> ArgCharacterID
+                    ArgTCorporationID -> ArgCorporationID
+                    ArgTContractID -> ArgContractID
+                    ArgTBeforeKillID -> ArgBeforeKillID
+                    ArgTOrderID -> ArgOrderID
+                    ArgTRowCount -> ArgRowCount
+                    ArgTFromID -> ArgFromID
+                    ArgTItemID -> ArgItemID
+                    _          -> error $ "argForm: not an integer field: " ++ show name
+                ABool -> aoptreq boolField name required $ Just . case name of
+                    ArgTExtended -> ArgExtended
+                    _            -> error $ "argForm: not a boolean field: " ++ show name
+                AIntList -> aoptreq textField name required $
+                                fmap ilconstr . parseList decimal
+                    where ilconstr = case name of
+                            ArgTIDs      -> ArgIDs
+                            ArgTEventIDs -> ArgEventIDs
+                            _            -> error $ "argForm: not an intlist field: "
+                                                    ++ show name
+                AStringList -> aoptreq textField name required $
+                                fmap ilconstr . parseList parseElem
+                    where ilconstr = case name of
+                            ArgTNames -> ArgNames
+                            _         -> error $ "argForm: not a stringlist field: "
+                                                 ++ show name
+                          parseElem = case name of
+                            ArgTNames -> characterName
+                            _         -> error $ "argForm: not a stringlist field: "
+                                                 ++ show name
+                _ -> error $ "argForm: Don't know how to handle arguments of this type: "
+                             ++ show atype
+                             ++ " (trying: " ++ show name ++ ")"
 
 -- Fill the DB with the list of calls.
 -- TODO: check if this is in the static dump. (probably not with all the info here)
@@ -280,7 +209,7 @@ getCallR :: Scope -> Call -> Handler RepHtml
 getCallR scope call = do
     mArgs <- runDB $ getArgs scope call -- Maybe CallParams
     mKeyForm <- sequence $ runFormPost <$> keyForm <$> mArgs
-    mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs <*> pure False)
+    mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs)
     doPage scope call mArgs False mKeyForm mArgForm Nothing
 
 postCallR :: Scope -> Call -> Handler RepHtml
@@ -294,14 +223,13 @@ postCallR scope call = do
         redirect (CallR scope call)
     else do
         mParams <- runDB $ getArgs scope call
-        mKeyForm <- sequence $ runFormPost <$> keyForm <$> mParams
+        mKeyForm <- sequence $ runFormPostNoToken <$> keyForm <$> mParams
         let mKey = join $ maybe Nothing
                            (\((kr,_),_) -> case kr of
                                 FormSuccess key -> Just key
                                 _               -> Nothing)
                            mKeyForm
-            hasKey = isJust mKey
-        mArgForm <- sequence $ runFormPost <$> (argForm call <$> mParams <*> pure hasKey)
+        mArgForm <- sequence $ runFormPostNoToken <$> (argForm call <$> mParams)
         mResult <- case mArgForm of
             Just ((res, _), _) -> case res of
                 FormSuccess args -> do

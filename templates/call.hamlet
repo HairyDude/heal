@@ -59,9 +59,12 @@ $nothing
                     $of FormMissing
                         <p>
                             <strong>Some of the arguments are required.
-                    $of FormFailure _
+                    $of FormFailure msgs
                         <p>
-                            <strong>Some of the arguments you provided were invalid.
+                            <strong>Some of the arguments you provided were invalid:
+                            <ul .FormFailMsgs>
+                                $forall msg <- msgs
+                                    <li>#{msg}
                     $of _
             ^{argWidg}
     <input type=submit value="Submit call">

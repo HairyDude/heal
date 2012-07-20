@@ -67,7 +67,7 @@ import Data.Text (Text)
 import Data.String
 
 data APIDataType = AInteger -- any integer type, distinctions are unimportant
-                 | ABigint  -- (except bigints)
+                            -- in docs are also mentioned long and bigint
                  | ADecimal -- e.g. isk balance/prices, standings
                  | ABool
                  | AChar64  -- usually vCode
@@ -79,7 +79,6 @@ data APIDataType = AInteger -- any integer type, distinctions are unimportant
 
 typeString :: IsString s => APIDataType -> s
 typeString AInteger    = "int"
-typeString ABigint     = "bigint"
 typeString ADecimal    = "decimal"
 typeString ABool       = "bool"
 typeString AChar64     = "char(64)"
@@ -197,7 +196,6 @@ argString ArgTItemID        = "itemID"
 data Key = Key { keyID :: Int
                , vCode :: Text
                , keyScope :: KeyScope }
-         | KeyNone
     deriving (Eq, Ord, Show)
 data KeyScope = UnknownKeyScope
               | CharKeyScope CharKey
