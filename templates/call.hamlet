@@ -23,7 +23,7 @@ $maybe result <- mResult
             <p>Success! Here's the result of your call:
             <pre>#{xml}
 <h2>#{toPathPiece call} in scope #{toPathPiece scope}
-$maybe CallParams _keytype arglist <- mArgs
+$maybe CallParams _keytype arglist <- mParams
     $if null arglist
         <p>This call takes no arguments.
     $else
@@ -37,36 +37,23 @@ $nothing
         This call doesn't exist in this scope. Try a different scope or a #
         different call.
 <form method=post action=@{CallR scope call} enctype=#{enctype}>
-    $maybe (keyRes, keyWidg) <- mKeyWidg
+    $maybe (res, widg) <- mWidg
         <fieldset>
-            <legend>Key
+            <legend>Key and arguments
             $if wasPost
-                $case keyRes
-                    $of FormMissing
-                        $if wantKey
-                            <p>
-                                <strong>This call requires a key!
-                    $of FormFailure _
-                        <p>
-                            <strong>Invalid key
-                    $of _
-            ^{keyWidg}
-    $maybe (argRes, argWidg) <- mArgWidg
-        <fieldset>
-            <legend>Call arguments
-            $if wasPost
-                $case argRes
+                $case res
                     $of FormMissing
                         <p>
-                            <strong>Some of the arguments are required.
+                            <strong>The key or some of the arguments are required.
                     $of FormFailure msgs
                         <p>
-                            <strong>Some of the arguments you provided were invalid:
+                            <strong>
+                                The key or some of the arguments you provided were invalid:
                             <ul .FormFailMsgs>
                                 $forall msg <- msgs
                                     <li>#{msg}
                     $of _
-            ^{argWidg}
+            ^{widg}
     <input type=submit value="Submit call">
 <hr>
 <form method=post action=@{CallR scope call}>

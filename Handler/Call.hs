@@ -51,7 +51,7 @@ moptreq req field fsettings def =
                     mreq field fsettings def
             else mopt field fsettings (Just def)
 
-keyForm :: CallParams -> Form (Maybe Key) -- return type (FormResult x, Widget)
+keyForm :: CallParams -> Form (Maybe Key)
 keyForm (CallParams keyType _) = renderDivs $ formToAForm $
     case keyType of -- don't make a form if no key is needed
         NoKey -> return (FormSuccess Nothing, mempty)
@@ -152,6 +152,30 @@ argForm call (CallParams _ args) markup = do
                              ++ show atype
                              ++ " (trying: " ++ show name ++ ")"
 
+keyArgForm :: Call -> CallParams -> Form (Maybe Key, [APIArgument])
+keyArgForm call params@(CallParams keyType _) markup = do
+    let wantKey = case keyType of
+                    NoKey -> False
+                    _     -> True
+    (keyres, keywidg) <- if wantKey
+                            then keyForm params markup
+                            else return (FormSuccess Nothing, mempty)
+    (argres, argwidg) <- argForm call params markup
+    let widg = keywidg <> argwidg
+    case keyres of
+        FormSuccess mKey -> case argres of
+            FormSuccess args  -> return (FormSuccess (mKey, args), widg)
+            FormFailure msgs' -> return (FormFailure msgs',        widg)
+            FormMissing       -> return (FormMissing,              widg)
+        FormFailure msgs -> case argres of
+            FormSuccess _     -> return (FormFailure msgs,            widg)
+            FormFailure msgs' -> return (FormFailure (msgs <> msgs'), widg)
+            FormMissing       -> return (FormMissing,                 widg)
+        FormMissing -> case argres of
+            FormSuccess _     -> return (FormMissing,       widg)
+            FormFailure msgs' -> return (FormFailure msgs', widg)
+            FormMissing       -> return (FormMissing,       widg)
+
 -- Fill the DB with the list of calls.
 -- TODO: check if this is in the static dump. (probably not with all the info here)
 populateCallDB :: Handler ()
@@ -175,28 +199,20 @@ populateCallDB = do
 -- Form widgets are built separately to let get/post handle them differently.
 doPage :: Scope -> Call -> Maybe CallParams
             -> Bool
-            -> Maybe ((FormResult (Maybe Key), Widget), Enctype)
-            -> Maybe ((FormResult [APIArgument], Widget), Enctype)
+            -> Maybe ((FormResult (Maybe Key, [APIArgument]), Widget), Enctype)
             -> Maybe ApiResult
             -> Handler RepHtml
-doPage scope call mArgs wasPost mKeyForm mArgForm mResult = do
+doPage scope call mParams wasPost mForm mResult = do
     let wantKey = maybe False -- display a key form?
                         (\(CallParams keyType _) -> case keyType of
                             NoKey -> False
                             _     -> True)
-                        mArgs
-        (mKeyWidg, keyEnctype) = maybe (Nothing, UrlEncoded)
-                                       (\((keyRes, widg),keyenctype) ->
-                                            (if wantKey then Just (keyRes, widg)
-                                                        else Nothing,
-                                             keyenctype))
-                                       mKeyForm
-        (mArgWidg, argEnctype) = maybe (Nothing, UrlEncoded)
-                                       (\((argRes,widg),argenctype) ->
-                                            (Just (argRes, widg),
-                                             argenctype))
-                                       mArgForm
-        enctype = keyEnctype <> argEnctype
+                        mParams
+        (mWidg, enctype) = maybe (Nothing, UrlEncoded)
+                                 (\((res,widg),enctype) ->
+                                     (Just (res, widg),
+                                      enctype))
+                                 mForm
     defaultLayout $ do
         setTitle "API Calls"
         let -- can't put type annotations in the tempate :(
@@ -207,10 +223,10 @@ doPage scope call mArgs wasPost mKeyForm mArgForm mResult = do
 -- Show list of args and form to provide them.
 getCallR :: Scope -> Call -> Handler RepHtml
 getCallR scope call = do
-    mArgs <- runDB $ getArgs scope call -- Maybe CallParams
-    mKeyForm <- sequence $ runFormPost <$> keyForm <$> mArgs
-    mArgForm <- sequence $ runFormPost <$> (argForm call <$> mArgs)
-    doPage scope call mArgs False mKeyForm mArgForm Nothing
+    mParams <- runDB $ getArgs scope call
+    mForm <- sequence $ runFormPostNoToken <$>
+                            (keyArgForm call <$> mParams)
+    doPage scope call mParams False mForm Nothing
 
 postCallR :: Scope -> Call -> Handler RepHtml
 postCallR scope call = do
@@ -223,16 +239,11 @@ postCallR scope call = do
         redirect (CallR scope call)
     else do
         mParams <- runDB $ getArgs scope call
-        mKeyForm <- sequence $ runFormPostNoToken <$> keyForm <$> mParams
-        let mKey = join $ maybe Nothing
-                           (\((kr,_),_) -> case kr of
-                                FormSuccess key -> Just key
-                                _               -> Nothing)
-                           mKeyForm
-        mArgForm <- sequence $ runFormPostNoToken <$> (argForm call <$> mParams)
-        mResult <- case mArgForm of
+        mForm <- sequence $ runFormPostNoToken <$>
+                                (keyArgForm call <$> mParams)
+        mResult <- case mForm of
             Just ((res, _), _) -> case res of
-                FormSuccess args -> do
+                FormSuccess (mKey, args) -> do
                     manager <- httpManager <$> getYesod
                     eRes <- sequence $ runExceptionT <$>
                                 runReaderT (doCall scope call mKey args) <$>
@@ -247,4 +258,4 @@ postCallR scope call = do
                 FormMissing      -> return Nothing -- TODO: produce a message
                 FormFailure _    -> return Nothing -- TODO: produce a message
             Nothing -> return Nothing -- invalid call TODO: produce a message
-        doPage scope call mParams True mKeyForm mArgForm mResult
+        doPage scope call mParams True mForm mResult
