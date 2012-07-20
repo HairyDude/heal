@@ -1,4 +1,5 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+-- mkYesodDispatch creates orphan instances and shadowing variables
+{-# OPTIONS_GHC -fno-warn-orphans -fno-warn-name-shadowing #-}
 module Application
     ( makeApplication
     , getApplicationDev

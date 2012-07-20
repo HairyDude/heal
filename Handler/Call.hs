@@ -209,9 +209,9 @@ doPage scope call mParams wasPost mForm mResult = do
                             _     -> True)
                         mParams
         (mWidg, enctype) = maybe (Nothing, UrlEncoded)
-                                 (\((res,widg),enctype) ->
+                                 (\((res,widg),enctype') ->
                                      (Just (res, widg),
-                                      enctype))
+                                      enctype'))
                                  mForm
     defaultLayout $ do
         setTitle "API Calls"
