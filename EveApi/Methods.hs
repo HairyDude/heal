@@ -24,7 +24,7 @@ import EveApi.Orphans ()
 import Control.Applicative
 import Control.Monad.Error
 import Control.Monad.Reader
-import Control.Monad.Trans.Control
+--import Control.Monad.Trans.Control
 import Control.Monad.Trans.Resource
 
 import Data.ByteString.Lazy (toChunks)

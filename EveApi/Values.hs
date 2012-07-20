@@ -88,30 +88,37 @@ apiCalls = M.fromList $
         ,UpcomingCalendarEvents] ++
     -- Mail bodies, notification texts and item locations; take list of IDs
     map (\name -> ((name, CharScope),
-            CallParams (CharKey Required) [Arg ArgTIDs AIntList Required]))
+            CallParams (CharKey Required) [Arg ArgTCharacterID AInteger FromKey
+                                          ,Arg ArgTIDs AIntList Required]))
         [Locations, MailBodies, NotificationTexts] ++
     [((Locations, CorpScope),
         CallParams (CharKey Required) [Arg ArgTIDs AIntList Required])
     -- Calendar event attendees, takes list of event IDs
     ,((CalendarEventAttendees, CharScope),
-        CallParams (CharKey Required) [Arg ArgTEventIDs AIntList Required])
+        CallParams (CharKey Required) [Arg ArgTCharacterID AInteger FromKey
+                                      ,Arg ArgTEventIDs AIntList Required])
     -- Contracts. contractID to check only one contract
     ,((Contracts, CharScope),
-        CallParams (CharKey Required) [Arg ArgTContractID AInteger Optional])
+        CallParams (CharKey Required) [Arg ArgTCharacterID AInteger FromKey
+                                      ,Arg ArgTContractID AInteger Optional])
     ,((ContractItems, CharScope),
-        CallParams (CharKey Required) [Arg ArgTContractID AInteger Required])
+        CallParams (CharKey Required) [Arg ArgTCharacterID AInteger FromKey
+                                      ,Arg ArgTContractID AInteger Required])
     ,((Contracts, CorpScope),
-        CallParams (CorpKey Required) [Arg ArgTContractID AInteger Optional])
+        CallParams (CorpKey Required) [Arg ArgTCharacterID AInteger FromKey
+                                      ,Arg ArgTContractID AInteger Optional])
     ,((ContractItems, CorpScope),
         CallParams (CorpKey Required) [Arg ArgTContractID AInteger Required])
     -- Kill log. beforeKillID to check old kills
     ,((KillLog, CharScope),
-        CallParams (CharKey Required) [Arg ArgTBeforeKillID AInteger Optional])
+        CallParams (CharKey Required) [Arg ArgTCharacterID AInteger FromKey
+                                      ,Arg ArgTBeforeKillID AInteger Optional])
     ,((KillLog, CorpScope),
         CallParams (CorpKey Required) [Arg ArgTBeforeKillID AInteger Optional])
     --  Market orders. orderID to fetch a closed order
     ,((MarketOrders, CharScope),
-        CallParams (CharKey Required) [Arg ArgTOrderID AInteger Optional])
+        CallParams (CharKey Required) [Arg ArgTCharacterID AInteger FromKey
+                                      ,Arg ArgTOrderID AInteger Optional])
     ,((MarketOrders, CorpScope),
         CallParams (CorpKey Required) [Arg ArgTOrderID AInteger Optional])
     -- Corp member tracking. extended=1 for extended info
@@ -124,7 +131,8 @@ apiCalls = M.fromList $
     --   access to?), not needed for characters)
     ,((WalletJournal, CharScope),
         CallParams (CharKey Required)
-            [Arg ArgTRowCount AInteger Optional
+            [Arg ArgTCharacterID AInteger FromKey
+            ,Arg ArgTRowCount AInteger Optional
             ,Arg ArgTFromID AInteger Optional])
     ,((WalletJournal, CorpScope),
         CallParams (CorpKey Required)
@@ -133,7 +141,8 @@ apiCalls = M.fromList $
             ,Arg ArgTAccountKey AInteger Optional])
     ,((WalletTransactions, CharScope),
         CallParams (CharKey Required)
-            [Arg ArgTRowCount AInteger Optional
+            [Arg ArgTCharacterID AInteger FromKey
+            ,Arg ArgTRowCount AInteger Optional
             ,Arg ArgTFromID AInteger Optional])
     ,((WalletTransactions, CorpScope),
         CallParams (CorpKey Required)
