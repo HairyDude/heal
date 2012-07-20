@@ -66,7 +66,9 @@ apiCalls = M.fromList $
         ,StarbaseList
         ,Titles] ++
     -- Character calls, no args
-    map (\name -> ((name, CharScope), CallParams (CharKey Required) []))
+    -- (except characterID to specify which character you're interested in)
+    map (\name -> ((name, CharScope), CallParams (CharKey Optional)
+                                                 [Arg ArgTCharacterID AInteger FromKey]))
         [AccountBalance
         ,AssetList
         ,CharacterSheet
