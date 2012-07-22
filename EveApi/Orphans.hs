@@ -7,7 +7,8 @@ module EveApi.Orphans () where
 
 import Prelude ((.))
 
-import Control.Monad.Trans (lift, MonadIO (..))
+import Control.Monad.IO.Class (MonadIO (..))
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Resource (ExceptionT)
 
 instance MonadIO m => MonadIO (ExceptionT m) where

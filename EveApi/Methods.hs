@@ -22,9 +22,9 @@ import EveApi.Errors
 import EveApi.Orphans ()
 
 import Control.Applicative
-import Control.Monad.Error
-import Control.Monad.Reader
---import Control.Monad.Trans.Control
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Resource
 
 import Data.ByteString.Lazy (toChunks)

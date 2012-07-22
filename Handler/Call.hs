@@ -10,8 +10,8 @@ import EveApi.Values
 import EveApi.Methods
 import ModelUtils
 
-import Control.Monad.Reader (runReaderT)
-import Control.Monad.Error hiding (sequence)
+import Control.Monad (liftM2)
+import Control.Monad.Trans.Reader (runReaderT)
 import Control.Monad.Trans.Resource
 
 import Data.Maybe
