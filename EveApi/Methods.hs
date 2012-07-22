@@ -99,7 +99,7 @@ makeCall scope call mKey' args' = do
 checkParams :: CallContext m => Maybe Key -> [APIArgument]
                                     -> CallResult m (Maybe (Maybe Key, [APIArgument]))
 checkParams mKey args = do
-    (CallParams keyType argList) <- lift $ asks callParams
+    (CallParams _ _ keyType argList) <- lift $ asks callParams
     let mmKey = case (keyType, mKey) of
             (NoKey, Nothing) -> Just Nothing -- no key for this call
             (NoKey, Just _)  -> Nothing      -- provided key when none needed

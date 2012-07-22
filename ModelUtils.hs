@@ -18,5 +18,5 @@ getArgs scope name = do
             -- Get the actual Args
             -- XXX: instead of catMaybes, properly handle Nothing (it's "impossible")
             args <- map argSpecArgSpec . catMaybes <$> mapM get argSpecIDs
-            return $ Just $ CallParams (callSpecKey callSpec) args
+            return $ Just $ CallParams scope name (callSpecKey callSpec) args
         Nothing -> return Nothing

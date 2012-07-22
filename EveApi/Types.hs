@@ -247,8 +247,10 @@ stringScope "server"  = Just ServerScope
 stringScope _         = Nothing
 
 data CallParams = CallParams
-        { callKey  :: KeyType
-        , callArgs     :: [Arg] }
+        { callScope :: Scope
+        , callCall  :: Call
+        , callKey   :: KeyType
+        , callArgs  :: [Arg] }
     deriving (Show, Eq, Ord)
 
 data FullCall = FullCall Scope Call (Maybe Key) [APIArgument]

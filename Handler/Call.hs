@@ -52,7 +52,7 @@ moptreq req field fsettings def =
             else mopt field fsettings (Just def)
 
 keyForm :: CallParams -> Form (Maybe Key)
-keyForm (CallParams keyType _) = renderDivs $ formToAForm $
+keyForm (CallParams _ _ keyType _) = renderDivs $ formToAForm $
     case keyType of -- don't make a form if no key is needed
         NoKey -> return (FormSuccess Nothing, mempty)
         _     -> do
@@ -104,8 +104,8 @@ aoptreq field name required constr =
         then Just <$> areq field (argString name) Nothing
         else          aopt field (argString name) Nothing
 
-argForm :: Call -> CallParams -> Form [APIArgument]
-argForm call (CallParams _ args) markup = do
+argForm :: CallParams -> Form [APIArgument]
+argForm (CallParams _ call _ args) markup = do
     -- XXX: is mconcat correct?
     -- Used at type [(FormResult [Maybe APIArgument],Widget)] ->
     --               (FormResult [Maybe APIArgument],Widget)
@@ -118,16 +118,16 @@ argForm call (CallParams _ args) markup = do
                                                             if b then 1 else 0)
             else case atype of
                 AInteger -> aoptreq intField name required $ Just . case name of
-                    ArgTVersion -> ArgVersion
-                    ArgTCharacterID -> ArgCharacterID
+                    ArgTVersion       -> ArgVersion
+                    ArgTCharacterID   -> ArgCharacterID
                     ArgTCorporationID -> ArgCorporationID
-                    ArgTContractID -> ArgContractID
-                    ArgTBeforeKillID -> ArgBeforeKillID
-                    ArgTOrderID -> ArgOrderID
-                    ArgTRowCount -> ArgRowCount
-                    ArgTFromID -> ArgFromID
-                    ArgTItemID -> ArgItemID
-                    _          -> error $ "argForm: not an integer field: " ++ show name
+                    ArgTContractID    -> ArgContractID
+                    ArgTBeforeKillID  -> ArgBeforeKillID
+                    ArgTOrderID       -> ArgOrderID
+                    ArgTRowCount      -> ArgRowCount
+                    ArgTFromID        -> ArgFromID
+                    ArgTItemID        -> ArgItemID
+                    _ -> error $ "argForm: not an integer field: " ++ show name
                 ABool -> aoptreq boolField name required $ Just . case name of
                     ArgTExtended -> ArgExtended
                     _            -> error $ "argForm: not a boolean field: " ++ show name
@@ -152,15 +152,15 @@ argForm call (CallParams _ args) markup = do
                              ++ show atype
                              ++ " (trying: " ++ show name ++ ")"
 
-keyArgForm :: Call -> CallParams -> Form (Maybe Key, [APIArgument])
-keyArgForm call params@(CallParams keyType _) markup = do
+keyArgForm :: CallParams -> Form (Maybe Key, [APIArgument])
+keyArgForm params@(CallParams _ _ keyType _) markup = do
     let wantKey = case keyType of
                     NoKey -> False
                     _     -> True
     (keyres, keywidg) <- if wantKey
                             then keyForm params markup
                             else return (FormSuccess Nothing, mempty)
-    (argres, argwidg) <- argForm call params markup
+    (argres, argwidg) <- argForm params markup
     let widg = keywidg <> argwidg
     case keyres of
         FormSuccess mKey -> case argres of
@@ -184,8 +184,8 @@ populateCallDB = do
     runDB $ deleteWhere ([] :: [Filter CallSpec])
     runDB $ deleteWhere ([] :: [Filter ArgSpec])
     runDB $ deleteWhere ([] :: [Filter CallArg])
-    forM_ (M.toList apiCalls) $
-        \((call, scope), CallParams key arglist) -> do
+    forM_ (M.elems apiCalls) $
+        \(CallParams scope call key arglist) -> do
             -- Insert the call
             callID <- runDB $ insert $ CallSpec scope call key
             -- Insert the ArgSpecs (getting IDs of any that are already in)
@@ -204,7 +204,7 @@ doPage :: Scope -> Call -> Maybe CallParams
             -> Handler RepHtml
 doPage scope call mParams wasPost mForm mResult = do
     let wantKey = maybe False -- display a key form?
-                        (\(CallParams keyType _) -> case keyType of
+                        (\(CallParams _ _ keyType _) -> case keyType of
                             NoKey -> False
                             _     -> True)
                         mParams
@@ -224,8 +224,7 @@ doPage scope call mParams wasPost mForm mResult = do
 getCallR :: Scope -> Call -> Handler RepHtml
 getCallR scope call = do
     mParams <- runDB $ getArgs scope call
-    mForm <- sequence $ runFormPostNoToken <$>
-                            (keyArgForm call <$> mParams)
+    mForm <- sequence $ runFormPostNoToken <$> (keyArgForm <$> mParams)
     doPage scope call mParams False mForm Nothing
 
 postCallR :: Scope -> Call -> Handler RepHtml
@@ -239,8 +238,7 @@ postCallR scope call = do
         redirect (CallR scope call)
     else do
         mParams <- runDB $ getArgs scope call
-        mForm <- sequence $ runFormPostNoToken <$>
-                                (keyArgForm call <$> mParams)
+        mForm <- sequence $ runFormPostNoToken <$> (keyArgForm <$> mParams)
         mResult <- case mForm of
             Just ((res, _), _) -> case res of
                 FormSuccess (mKey, args) -> do

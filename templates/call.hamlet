@@ -23,7 +23,7 @@ $maybe result <- mResult
             <p>Success! Here's the result of your call:
             <pre>#{xml}
 <h2>#{toPathPiece call} in scope #{toPathPiece scope}
-$maybe CallParams _keytype arglist <- mParams
+$maybe CallParams _ _ _keytype arglist <- mParams
     $if null arglist
         <p>This call takes no arguments.
     $else
