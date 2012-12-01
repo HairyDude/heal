@@ -10,7 +10,7 @@ import EveApi.Values
 import EveApi.Methods
 import ModelUtils
 
-import Control.Monad (liftM2)
+import Control.Monad (liftM, liftM2, forM, forM_)
 import Control.Monad.Trans.Reader (runReaderT)
 import Control.Monad.Trans.Resource
 

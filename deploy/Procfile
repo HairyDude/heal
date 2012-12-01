@@ -11,22 +11,25 @@
 #     mv deploy/Procfile ./
 #
 # * Create an empty package.json
-#     echo '{ "name": "eveapiproxy", "version": "0.0.1", "dependencies": {} }' >> package.json
+#     echo '{ "name": "heal", "version": "0.0.1", "dependencies": {} }' >> package.json
 #
 # Postgresql Yesod setup:
 #
-# * add a dependency on the "heroku" package in your cabal file
+# * add dependencies on the "heroku", "aeson" and "unordered-containers" packages in your cabal file
 #
 # * add code in Application.hs to use the heroku package and load the connection parameters.
 #   The below works for Postgresql.
 #
+#   import Data.HashMap.Strict as H
+#   import Data.Aeson.Types as AT
 #   #ifndef DEVELOPMENT
 #   import qualified Web.Heroku
 #   #endif
 #
 #
-#   makeApplication :: AppConfig DefaultEnv Extra -> Logger -> IO Application
-#   makeApplication conf logger = do
+#
+#   makeFoundation :: AppConfig DefaultEnv Extra -> Logger -> IO App
+#   makeFoundation conf setLogger = do
 #       manager <- newManager def
 #       s <- staticSite
 #       hconfig <- loadHerokuConfig
@@ -35,17 +38,7 @@
 #                 Database.Persist.Store.applyEnv
 #       p <- Database.Persist.Store.createPoolConfig (dbconf :: Settings.PersistConfig)
 #       Database.Persist.Store.runPool dbconf (runMigration migrateAll) p
-#    let foundation = App conf setLogger s p manager dbconf
-#    app <- toWaiAppPlain foundation
-#    return $ logWare app
-#  where
-##ifdef DEVELOPMENT
-#    logWare = logCallbackDev (logBS setLogger)
-#    setLogger = logger
-##else
-#    setLogger = toProduction logger -- by default the logger is set for development
-#    logWare = logCallback (logBS setLogger)
-##endif
+#       return $ App conf setLogger s p manager dbconf
 #
 #   #ifndef DEVELOPMENT
 #   canonicalizeKey :: (Text, val) -> (Text, val)
@@ -85,7 +78,7 @@
 # * add your web executable binary (referenced below) to the git repository
 #
 #     git checkout deploy
-#     git add ./dist/build/eveapiproxy/eveapiproxy
+#     git add ./dist/build/heal/heal
 #     git commit -m deploy
 #
 # * push to Heroku
@@ -94,4 +87,4 @@
 
 
 # Heroku configuration that runs your app
-web: ./dist/build/eveapiproxy/eveapiproxy production -p $PORT
+web: ./dist/build/heal/heal production -p $PORT
